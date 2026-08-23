@@ -16,7 +16,7 @@ from typing import List, Optional, Tuple, Dict, Any
 import mido
 
 class MidiPlayer:
-    def __init__(self, default_port_substring: str = "Midi Through"):
+    def __init__(self, default_port_substring: str = "Midi Through", ignore_program_change: bool = True):
         self.lock = threading.Lock()
         self._wake_event = threading.Event()
         self._worker_thread: Optional[threading.Thread] = None
@@ -25,6 +25,7 @@ class MidiPlayer:
         # Configuration & Port
         self.target_port_name: Optional[str] = None
         self.default_port_substring = default_port_substring
+        self.ignore_program_change: bool = ignore_program_change
         self._init_port()
 
         # Playback State
@@ -127,6 +128,11 @@ class MidiPlayer:
             for msg in mid:
                 current_time += msg.time
                 if not msg.is_meta:
+                    if self.ignore_program_change:
+                        if msg.type == 'program_change':
+                            continue
+                        if msg.type == 'control_change' and msg.control in (0, 32):
+                            continue
                     events.append((current_time, msg.copy()))
 
             with self.lock:
@@ -283,6 +289,7 @@ class MidiPlayer:
                 "count_in_bars": self.count_in_bars,
                 "port": self.target_port_name,
                 "available_ports": self.get_available_ports(),
+                "ignore_program_change": self.ignore_program_change,
                 "bpm": self.bpm,
                 "time_signature": f"{self.time_signature[0]}/{self.time_signature[1]}"
             }
