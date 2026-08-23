@@ -1,0 +1,13 @@
+[Unit]
+Description=40 Hours a Day - MIDI Practice Partner Server
+After=network.target sound.target pianoteq.service
+
+[Service]
+Type=simple
+WorkingDirectory=%h/40hoursaday
+ExecStart=/usr/bin/python3 %h/40hoursaday/app.py --port 8090 --midi-port "Midi Through"
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target

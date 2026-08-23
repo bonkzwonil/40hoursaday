@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>40 Hours a Day - MIDI Practice Partner</title>
+    <meta name="theme-color" content="#0b0f19">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎻</text></svg>">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Top App Bar -->
+        <header class="app-header">
+            <div class="logo-group">
+                <span class="logo-icon">🎻</span>
+                <div>
+                    <h1 class="app-title">40 Hours a Day</h1>
+                    <p class="app-subtitle" data-i18n="appSubtitle">MIDI Practice Partner</p>
+                </div>
+            </div>
+            
+            <div class="header-actions">
+                <!-- Language Switcher -->
+                <div class="lang-switcher">
+                    <button class="lang-btn active" data-lang="en">EN</button>
+                    <button class="lang-btn" data-lang="de">DE</button>
+                </div>
+
+                <!-- MIDI Port Selector -->
+                <div class="port-selector-wrapper">
+                    <span class="port-status-indicator" id="port-indicator" title="MIDI Port Status"></span>
+                    <select id="midi-port-select" class="select-input" title="MIDI Output Port">
+                        <option value="" data-i18n="loadingPorts">Loading ports...</option>
+                    </select>
+                </div>
+
+                <!-- Panic Button -->
+                <button id="btn-panic" class="btn btn-icon btn-danger" title="MIDI Panic (Stop all notes)" data-i18n-title="panicTitle">
+                    🚨
+                </button>
+            </div>
+        </header>
+
+        <!-- Main Player Deck -->
+        <section class="player-card">
+            <div class="current-track-info">
+                <div class="track-badge-row">
+                    <span class="badge" id="track-meter">-- / --</span>
+                    <span class="badge" id="track-bpm">-- BPM</span>
+                    <span class="badge badge-state" id="playback-state-badge" data-i18n="stateReady">Ready</span>
+                </div>
+                <h2 class="track-title" id="current-track-title" data-i18n="noTrackSelected">No piece selected</h2>
+            </div>
+
+            <!-- Scrubber / Timeline -->
+            <div class="scrubber-container">
+                <div class="time-display">
+                    <span id="time-current">00:00</span>
+                    <span id="time-total">00:00</span>
+                </div>
+                <div class="progress-bar-wrapper" id="progress-bar-container">
+                    <div class="progress-bar" id="progress-bar"></div>
+                    <input type="range" id="seek-slider" min="0" max="100" value="0" step="0.1" class="seek-slider">
+                </div>
+            </div>
+
+            <!-- Primary Playback Controls -->
+            <div class="playback-controls">
+                <button id="btn-loop" class="btn btn-round-tool" title="Loop" data-i18n-title="loopTitle">
+                    🔁 <span class="tool-label" data-i18n="loopLabel">Loop</span>
+                </button>
+
+                <button id="btn-stop" class="btn btn-round-action btn-secondary" title="Stop" data-i18n-title="stopTitle">
+                    ⏹
+                </button>
+
+                <button id="btn-play-pause" class="btn btn-primary btn-play-large" title="Play / Pause" data-i18n-title="playPauseTitle">
+                    ▶
+                </button>
+
+                <button id="btn-countin-toggle" class="btn btn-round-tool" title="Count-in Metronome" data-i18n-title="countinTitle">
+                    ⏱ <span class="tool-label" data-i18n="countinLabel">Count-in</span>
+                </button>
+            </div>
+
+            <!-- Extra Settings Row (Transpose & Count-in) -->
+            <div class="extra-controls-row">
+                <div class="control-pill">
+                    <span class="pill-label" data-i18n="countinPillLabel">Count-in:</span>
+                    <div class="segmented-control" id="countin-segments">
+                        <button class="seg-btn active" data-countin="0" data-i18n="countinOff">Off</button>
+                        <button class="seg-btn" data-countin="1" data-i18n="countin1Bar">1 Bar</button>
+                        <button class="seg-btn" data-countin="2" data-i18n="countin2Bars">2 Bars</button>
+                    </div>
+                </div>
+
+                <div class="control-pill">
+                    <span class="pill-label" data-i18n="keyTranspose">Key:</span>
+                    <div class="transpose-controls">
+                        <button id="btn-trans-down" class="btn btn-sm btn-outline">♭ -1</button>
+                        <span id="transpose-val" class="transpose-badge">0</span>
+                        <button id="btn-trans-up" class="btn btn-sm btn-outline">♯ +1</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tempo / Speed Section -->
+            <div class="tempo-card">
+                <div class="tempo-header">
+                    <span class="tempo-title" data-i18n="practiceTempo">PRACTICE TEMPO</span>
+                    <div class="tempo-value-group">
+                        <span class="tempo-percent" id="tempo-percent-text">100%</span>
+                        <span class="tempo-calc-bpm" id="tempo-calc-bpm">(60 BPM)</span>
+                    </div>
+                </div>
+
+                <!-- Big Slider -->
+                <div class="slider-row">
+                    <span class="slider-bound">10%</span>
+                    <input type="range" id="tempo-slider" min="10" max="200" value="100" step="1" class="tempo-range">
+                    <span class="slider-bound">200%</span>
+                </div>
+
+                <!-- Fine Tuning Steppers -->
+                <div class="fine-tuning-row">
+                    <button class="btn btn-step" id="btn-tempo-m5">-5%</button>
+                    <button class="btn btn-step" id="btn-tempo-m1">-1%</button>
+                    <button class="btn btn-step btn-reset" id="btn-tempo-100">100%</button>
+                    <button class="btn btn-step" id="btn-tempo-p1">+1%</button>
+                    <button class="btn btn-step" id="btn-tempo-p5">+5%</button>
+                </div>
+
+                <!-- Quick Presets -->
+                <div class="tempo-presets">
+                    <button class="preset-pill" data-speed="0.50">50%</button>
+                    <button class="preset-pill" data-speed="0.65">65%</button>
+                    <button class="preset-pill" data-speed="0.75">75%</button>
+                    <button class="preset-pill" data-speed="0.85">85%</button>
+                    <button class="preset-pill" data-speed="0.90">90%</button>
+                    <button class="preset-pill active" data-speed="1.00">100%</button>
+                    <button class="preset-pill" data-speed="1.10">110%</button>
+                    <button class="preset-pill" data-speed="1.25">125%</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Library Section -->
+        <section class="library-section">
+            <div class="library-header">
+                <div class="library-title-group">
+                    <h3 class="section-title" data-i18n="piecesTitle">Practice Pieces</h3>
+                    <span class="count-badge" id="track-count">0 Pieces</span>
+                </div>
+                
+                <label for="file-upload-input" class="btn btn-sm btn-primary upload-btn">
+                    <span data-i18n="uploadButton">➕ New Piece</span>
+                    <input type="file" id="file-upload-input" accept=".mid,.midi" style="display: none;">
+                </label>
+            </div>
+
+            <!-- Search Filter -->
+            <div class="search-box">
+                <span class="search-icon">🔍</span>
+                <input type="text" id="search-input" placeholder="Search piece (e.g. Rieding, Bach, Etude)..." data-i18n-placeholder="searchPlaceholder" class="search-input">
+                <button id="btn-clear-search" class="btn-clear" style="display: none;">✕</button>
+            </div>
+
+            <!-- Track List -->
+            <div class="track-list" id="track-list">
+                <div class="loading-spinner" data-i18n="loadingPieces">Loading pieces...</div>
+            </div>
+        </section>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="toast"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>

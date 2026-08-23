@@ -1,0 +1,60 @@
+#!/usr/bin/env python3
+import sys
+import time
+import argparse
+import mido
+
+def main():
+    parser = argparse.ArgumentParser(description="Play MIDI file with speed control to ALSA/Pianoteq")
+    parser.add_argument("file", help="Path to MIDI file")
+    parser.add_argument("-s", "--speed", type=float, default=1.0, help="Playback speed multiplier (e.g. 0.8 for 80%% tempo, 1.2 for 120%%). Default: 1.0")
+    parser.add_argument("-p", "--port", default="Midi Through", help="ALSA MIDI output port (name or substring, default: 'Midi Through')")
+    args = parser.parse_args()
+
+    if args.speed <= 0:
+        print("Error: speed must be greater than 0", file=sys.stderr)
+        sys.exit(1)
+
+    outputs = mido.get_output_names()
+    target_port = None
+    for name in outputs:
+        if args.port in name or args.port in name.split()[-1]:
+            target_port = name
+            break
+
+    if not target_port:
+        if outputs:
+            target_port = outputs[0]
+        else:
+            print("Error: No MIDI output ports found!", file=sys.stderr)
+            sys.exit(1)
+
+    mid = mido.MidiFile(args.file)
+    total_length = mid.length / args.speed
+    mins, secs = divmod(int(total_length), 60)
+    print(f"Playing '{args.file}' -> {target_port}")
+    print(f"Speed: {args.speed}x | Duration: {mins:02d}:{secs:02d}")
+
+    with mido.open_output(target_port) as port:
+        start_time = time.time()
+        try:
+            for msg in mid:
+                if msg.time > 0:
+                    time.sleep(msg.time / args.speed)
+                if not msg.is_meta:
+                    port.send(msg)
+                elapsed = time.time() - start_time
+                e_min, e_sec = divmod(int(elapsed), 60)
+                sys.stdout.write(f"\rTime: {e_min:02d}:{e_sec:02d} / {mins:02d}:{secs:02d} [{int((elapsed/max(1,total_length))*100):3d}%%]")
+                sys.stdout.flush()
+        except KeyboardInterrupt:
+            print("\nStopped.")
+        finally:
+            # Send all notes off on all channels
+            for ch in range(16):
+                port.send(mido.Message('control_change', channel=ch, control=123, value=0))
+                port.send(mido.Message('control_change', channel=ch, control=120, value=0))
+            print("\nDone.")
+
+if __name__ == '__main__':
+    main()
