@@ -22,8 +22,7 @@ def main():
     parser.add_argument("-p", "--port", type=int, default=8090, help="HTTP port to listen on (default: 8080)")
     parser.add_argument("-d", "--midi-dir", action="append", help="MIDI directory to scan (can be specified multiple times)")
     parser.add_argument("-m", "--midi-port", default="Midi Through", help="Default MIDI output port substring (default: 'Midi Through')")
-    parser.add_argument("--ignore-program-change", dest="ignore_program_change", action="store_true", default=True, help="Ignore MIDI Program Change events to preserve Pianoteq/synth presets (default: True)")
-    parser.add_argument("--allow-program-change", dest="ignore_program_change", action="store_false", help="Allow MIDI Program Change events to switch synth presets")
+    parser.add_argument("--allow-program-change", action="store_true", default=False, help="Allow MIDI Program Change and Bank Select events (default: ignored to protect synth presets)")
     args = parser.parse_args()
 
     # Search directories for MIDI files
@@ -51,7 +50,7 @@ def main():
     # Initialize Engine & Library
     player = MidiPlayer(
         default_port_substring=args.midi_port,
-        ignore_program_change=args.ignore_program_change
+        ignore_program_change=not args.allow_program_change
     )
     library = MidiLibrary(search_dirs=valid_dirs)
 

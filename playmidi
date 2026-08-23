@@ -9,9 +9,9 @@ def main():
     parser.add_argument("file", help="Path to MIDI file")
     parser.add_argument("-s", "--speed", type=float, default=1.0, help="Playback speed multiplier (e.g. 0.8 for 80%% tempo, 1.2 for 120%%). Default: 1.0")
     parser.add_argument("-p", "--port", default="Midi Through", help="ALSA MIDI output port (name or substring, default: 'Midi Through')")
-    parser.add_argument("--ignore-program-change", dest="ignore_program_change", action="store_true", default=True, help="Ignore MIDI Program Change events (default: True)")
-    parser.add_argument("--allow-program-change", dest="ignore_program_change", action="store_false", help="Allow MIDI Program Change events")
+    parser.add_argument("--allow-program-change", action="store_true", default=False, help="Allow MIDI Program Change and Bank Select events (default: ignored)")
     args = parser.parse_args()
+    ignore_pc = not args.allow_program_change
 
     if args.speed <= 0:
         print("Error: speed must be greater than 0", file=sys.stderr)
@@ -35,7 +35,7 @@ def main():
     total_length = mid.length / args.speed
     mins, secs = divmod(int(total_length), 60)
     print(f"Playing '{args.file}' -> {target_port}")
-    print(f"Speed: {args.speed}x | Duration: {mins:02d}:{secs:02d} | Ignore PC: {args.ignore_program_change}")
+    print(f"Speed: {args.speed}x | Duration: {mins:02d}:{secs:02d} | Ignore PC: {ignore_pc}")
 
     with mido.open_output(target_port) as port:
         start_time = time.time()
@@ -44,7 +44,7 @@ def main():
                 if msg.time > 0:
                     time.sleep(msg.time / args.speed)
                 if not msg.is_meta:
-                    if args.ignore_program_change:
+                    if ignore_pc:
                         if msg.type == 'program_change' or (msg.type == 'control_change' and msg.control in (0, 32)):
                             continue
                     port.send(msg)
