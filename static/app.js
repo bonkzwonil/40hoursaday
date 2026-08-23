@@ -153,6 +153,7 @@
         langButtons: document.querySelectorAll('.lang-btn'),
         portSelect: document.getElementById('midi-port-select'),
         portIndicator: document.getElementById('port-indicator'),
+        btnPcToggle: document.getElementById('btn-pc-toggle'),
         btnPanic: document.getElementById('btn-panic'),
         
         currentTrackTitle: document.getElementById('current-track-title'),
@@ -282,11 +283,21 @@
         state.status = { ...state.status, ...status };
         const s = state.status;
 
-        // Port
+        // Port & Program Change
         if (s.port) {
             elements.portIndicator.classList.add('connected');
         } else {
             elements.portIndicator.classList.remove('connected');
+        }
+
+        if (elements.btnPcToggle) {
+            if (s.allow_program_change) {
+                elements.btnPcToggle.classList.add('active');
+                elements.btnPcToggle.title = "Program Change: ALLOWED (Instrument changes enabled)";
+            } else {
+                elements.btnPcToggle.classList.remove('active');
+                elements.btnPcToggle.title = "Program Change: BLOCKED (Preset protected)";
+            }
         }
 
         if (s.available_ports && document.activeElement !== elements.portSelect) {
@@ -398,6 +409,31 @@
         return mainName || portStr;
     }
 
+    function findBestPortMatch(selectEl, targetPort) {
+        if (!targetPort) return null;
+        const options = Array.from(selectEl.options).filter(o => o.value);
+        if (options.length === 0) return null;
+        
+        // 1. Exact match
+        let found = options.find(o => o.value === targetPort);
+        if (found) return found.value;
+
+        // 2. Case-insensitive exact match
+        const tLower = targetPort.toLowerCase().trim();
+        found = options.find(o => o.value.toLowerCase().trim() === tLower);
+        if (found) return found.value;
+
+        // 3. Option contains target (e.g. "VirMIDI 2-0" in "Virtual Raw MIDI 2-0:VirMIDI 2-0 24:0")
+        found = options.find(o => o.value.toLowerCase().includes(tLower));
+        if (found) return found.value;
+
+        // 4. Target contains option
+        found = options.find(o => tLower.includes(o.value.toLowerCase()));
+        if (found) return found.value;
+
+        return null;
+    }
+
     function populatePorts(ports, selectedPort) {
         if (!ports) ports = [];
 
@@ -417,6 +453,7 @@
                             uniquePorts.every((p, idx) => p === currentOptions[idx]);
 
         if (!optionsSame) {
+            const previousVal = elements.portSelect.value || localStorage.getItem('40hoursaday_preferred_port');
             elements.portSelect.innerHTML = '';
             if (uniquePorts.length === 0) {
                 const opt = document.createElement('option');
@@ -431,13 +468,20 @@
                     elements.portSelect.appendChild(opt);
                 });
             }
+            if (previousVal) {
+                const prevMatch = findBestPortMatch(elements.portSelect, previousVal);
+                if (prevMatch) elements.portSelect.value = prevMatch;
+            }
         }
 
-        // Set selected value without resetting if user is currently interacting
-        if (selectedPort) {
-            const hasOption = Array.from(elements.portSelect.options).some(o => o.value === selectedPort);
-            if (hasOption && elements.portSelect.value !== selectedPort) {
-                elements.portSelect.value = selectedPort;
+        const savedPort = localStorage.getItem('40hoursaday_preferred_port');
+        const effectivePort = selectedPort || savedPort || state.status.port;
+
+        if (effectivePort) {
+            const matched = findBestPortMatch(elements.portSelect, effectivePort);
+            if (matched && elements.portSelect.value !== matched) {
+                elements.portSelect.value = matched;
+                state.status.port = matched;
             }
         }
     }
@@ -505,7 +549,8 @@
     // Actions
     async function playFile(filepath) {
         showToast(t('toastLoading', { file: filepath.split('/').pop() }));
-        const currentPort = elements.portSelect.value || state.status.port;
+        const savedPort = localStorage.getItem('40hoursaday_preferred_port');
+        const currentPort = elements.portSelect.value || savedPort || state.status.port;
         const res = await apiPost('play', {
             file: filepath,
             speed: state.status.speed,
@@ -622,11 +667,31 @@
             const port = e.target.value;
             if (port) {
                 state.status.port = port;
+                try {
+                    localStorage.setItem('40hoursaday_preferred_port', port);
+                } catch (e) {}
                 const res = await apiPost('port', { port });
                 if (res && res.status) updateUI(res.status);
                 showToast(t('toastPort', { port: formatPortLabel(port) }));
             }
         });
+
+        // Program Change Per-Port Toggle
+        if (elements.btnPcToggle) {
+            elements.btnPcToggle.addEventListener('click', async () => {
+                const currentPort = elements.portSelect.value || state.status.port;
+                if (!currentPort) return;
+                const newAllowed = !state.status.allow_program_change;
+                state.status.allow_program_change = newAllowed;
+                updateUI(state.status);
+
+                const res = await apiPost('port/program_change', { port: currentPort, allow: newAllowed });
+                if (res && res.status) {
+                    updateUI(res.status);
+                }
+                showToast(newAllowed ? "Program Change: ALLOWED (Instrument switching enabled)" : "Program Change: BLOCKED (Preset protected)");
+            });
+        }
 
         // Tempo Slider
         elements.tempoSlider.addEventListener('input', (e) => {
@@ -990,6 +1055,12 @@
     async function init() {
         setupEvents();
         applyLanguage(currentLang);
+
+        const savedPort = localStorage.getItem('40hoursaday_preferred_port');
+        if (savedPort) {
+            await apiPost('port', { port: savedPort });
+        }
+
         await loadPorts();
         await loadFiles();
         

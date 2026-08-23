@@ -150,6 +150,7 @@ class PracticePartnerHandler(SimpleHTTPRequestHandler):
             filepath = body.get("file")
             speed = body.get("speed")
             port = body.get("port")
+            clean_port = str(port).strip() if port and str(port).strip() else None
             loop = body.get("loop")
             count_in = body.get("count_in")
             transpose = body.get("transpose")
@@ -157,7 +158,7 @@ class PracticePartnerHandler(SimpleHTTPRequestHandler):
             ok = self.player.play(
                 filepath=filepath,
                 speed=speed,
-                port=port,
+                port=clean_port,
                 loop=loop,
                 count_in=count_in,
                 transpose=transpose
@@ -211,6 +212,17 @@ class PracticePartnerHandler(SimpleHTTPRequestHandler):
                 return
             ok = self.player.set_port(port)
             self._send_json({"success": ok, "port": self.player.target_port_name, "status": self.player.get_status()})
+            return
+
+        if path == "/api/port/program_change":
+            body = self._parse_json_body() or {}
+            port = body.get("port") or self.player.target_port_name
+            allow = body.get("allow")
+            if port and allow is not None:
+                ok = self.player.set_port_program_change(str(port), bool(allow))
+                self._send_json({"success": ok, "status": self.player.get_status()})
+            else:
+                self._send_error("Missing 'allow' parameter")
             return
 
         if path == "/api/loop":

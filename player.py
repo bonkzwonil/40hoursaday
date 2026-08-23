@@ -8,6 +8,7 @@ Handles accurate MIDI playback, real-time speed adjustment,
 seeking, looping, metronome count-in, and ALSA/MIDI output.
 """
 
+import json
 import math
 import os
 import threading
@@ -16,7 +17,9 @@ from typing import List, Optional, Tuple, Dict, Any
 import mido
 
 class MidiPlayer:
-    def __init__(self, default_port_substring: str = "Midi Through", ignore_program_change: bool = True):
+    def __init__(self, default_port_substring: str = "Midi Through", 
+                 allow_program_change_patterns: Optional[List[str]] = None,
+                 block_program_change_patterns: Optional[List[str]] = None):
         self.lock = threading.Lock()
         self._wake_event = threading.Event()
         self._worker_thread: Optional[threading.Thread] = None
@@ -25,9 +28,11 @@ class MidiPlayer:
         # Configuration & Port
         self.target_port_name: Optional[str] = None
         self.default_port_substring = default_port_substring
-        self.ignore_program_change: bool = ignore_program_change
-        self._init_port()
-
+        self.allow_patterns: List[str] = [p.lower().strip() for p in (allow_program_change_patterns or []) if p.strip()]
+        self.block_patterns: List[str] = [p.lower().strip() for p in (block_program_change_patterns or []) if p.strip()]
+        
+        self.config_file = os.path.expanduser("~/.config/40hoursaday/port_settings.json")
+        self.port_program_changes: Dict[str, bool] = {}
         # Playback State
         self.state: str = "idle"  # "idle", "playing", "paused"
         self.current_filepath: Optional[str] = None
@@ -49,6 +54,80 @@ class MidiPlayer:
         # Real-time synchronization
         self._clock_base_time: float = 0.0
         self._song_base_pos: float = 0.0
+
+        self._load_port_settings()
+        self._init_port()
+
+    def _load_port_settings(self) -> None:
+        """Loads per-device Program Change settings from disk."""
+        if os.path.exists(self.config_file):
+            try:
+                with open(self.config_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if isinstance(data, dict):
+                        self.port_program_changes = data.get("program_changes", {})
+            except Exception as e:
+                print(f"[MidiPlayer] Warning: Could not load port settings: {e}")
+
+    def _save_port_settings(self) -> None:
+        """Saves per-device Program Change settings to disk."""
+        try:
+            os.makedirs(os.path.dirname(self.config_file), exist_ok=True)
+            with open(self.config_file, "w", encoding="utf-8") as f:
+                json.dump({"program_changes": self.port_program_changes}, f, indent=2)
+        except Exception as e:
+            print(f"[MidiPlayer] Warning: Could not save port settings: {e}")
+
+    def is_program_change_allowed_for_port(self, port_name: Optional[str]) -> bool:
+        """Checks whether Program Change / Bank Select events should be sent to this port."""
+        if not port_name:
+            return False
+
+        # 1. Exact match in saved user settings
+        if port_name in self.port_program_changes:
+            return bool(self.port_program_changes[port_name])
+
+        # 2. Substring match in saved user settings
+        p_lower = port_name.lower().strip()
+        for saved_port, allowed in self.port_program_changes.items():
+            s_lower = saved_port.lower().strip()
+            if s_lower in p_lower or p_lower in s_lower:
+                return bool(allowed)
+
+        # 3. CLI explicitly blocked
+        if "all" in self.block_patterns:
+            return False
+        for pat in self.block_patterns:
+            if pat in p_lower:
+                return False
+
+        # 4. CLI explicitly allowed
+        if "all" in self.allow_patterns:
+            return True
+        for pat in self.allow_patterns:
+            if pat in p_lower:
+                return True
+
+        # 5. Smart defaults based on device type
+        # General MIDI synths (FluidSynth, Timidity, GM, default VirMIDI 0-0/16:0) allow Program Changes
+        if any(x in p_lower for x in ("fluid", "musescore", "timidity", "gm", "virmidi 0-0", "16:0", "through", "synth")):
+            return True
+
+        # Piano plugins / hardware stage pianos protect presets
+        if any(x in p_lower for x in ("pianoteq", "piano", "virmidi 0-1", "17:0", "stage")):
+            return False
+
+        # Default fallback: allow if not blocked
+        return False
+
+    def set_port_program_change(self, port_name: str, allow: bool) -> bool:
+        """Configures and persists Program Change permission for a specific MIDI port."""
+        if not port_name or not port_name.strip():
+            return False
+        with self.lock:
+            self.port_program_changes[port_name.strip()] = bool(allow)
+            self._save_port_settings()
+        return True
 
     def _init_port(self):
         """Finds best matching output port."""
@@ -81,16 +160,17 @@ class MidiPlayer:
 
     def set_port(self, port_name: str) -> bool:
         """Sets target MIDI output port."""
-        if not port_name:
+        if not port_name or not port_name.strip():
             return False
         available = self.get_available_ports()
         matched_port = None
         if port_name in available:
             matched_port = port_name
         else:
-            # Try substring match
+            # Try bidirectional substring match
+            p_lower = port_name.lower()
             for p in available:
-                if port_name.lower() in p.lower():
+                if p_lower in p.lower() or p.lower() in p_lower:
                     matched_port = p
                     break
 
@@ -128,11 +208,6 @@ class MidiPlayer:
             for msg in mid:
                 current_time += msg.time
                 if not msg.is_meta:
-                    if self.ignore_program_change:
-                        if msg.type == 'program_change':
-                            continue
-                        if msg.type == 'control_change' and msg.control in (0, 32):
-                            continue
                     events.append((current_time, msg.copy()))
 
             with self.lock:
@@ -156,8 +231,8 @@ class MidiPlayer:
         """Starts playback with optional parameters."""
         self.stop()
 
-        if port:
-            self.set_port(port)
+        if port and isinstance(port, str) and port.strip():
+            self.set_port(port.strip())
 
         if filepath and filepath != self.current_filepath:
             if not self.load_file(filepath):
@@ -276,6 +351,7 @@ class MidiPlayer:
         """Returns the current player status for the UI/API."""
         with self.lock:
             self._update_position_unlocked()
+            available = self.get_available_ports()
             return {
                 "state": self.state,
                 "filename": self.current_filename,
@@ -288,8 +364,9 @@ class MidiPlayer:
                 "transpose": self.transpose,
                 "count_in_bars": self.count_in_bars,
                 "port": self.target_port_name,
-                "available_ports": self.get_available_ports(),
-                "ignore_program_change": self.ignore_program_change,
+                "available_ports": available,
+                "allow_program_change": self.is_program_change_allowed_for_port(self.target_port_name),
+                "port_program_changes": {p: self.is_program_change_allowed_for_port(p) for p in available},
                 "bpm": self.bpm,
                 "time_signature": f"{self.time_signature[0]}/{self.time_signature[1]}"
             }
@@ -453,6 +530,12 @@ class MidiPlayer:
                                 new_note = max(0, min(127, msg_to_send.note + self.transpose))
                                 msg_to_send.note = new_note
                         self.position = event_t
+
+                    # Per-device Program Change & Bank Select filter
+                    if msg_to_send.type == 'program_change' or (msg_to_send.type == 'control_change' and getattr(msg_to_send, 'control', -1) in (0, 32)):
+                        if not self.is_program_change_allowed_for_port(active_port_name):
+                            event_idx += 1
+                            continue
 
                     try:
                         port.send(msg_to_send)

@@ -22,7 +22,8 @@ def main():
     parser.add_argument("-p", "--port", type=int, default=8090, help="HTTP port to listen on (default: 8080)")
     parser.add_argument("-d", "--midi-dir", action="append", help="MIDI directory to scan (can be specified multiple times)")
     parser.add_argument("-m", "--midi-port", default="Midi Through", help="Default MIDI output port substring (default: 'Midi Through')")
-    parser.add_argument("--allow-program-change", action="store_true", default=False, help="Allow MIDI Program Change and Bank Select events (default: ignored to protect synth presets)")
+    parser.add_argument("--allow-program-change", nargs="*", default=None, help="Ports or substrings to allow Program Change on (e.g. 'Fluid' 'VirMIDI 0-0' or 'all')")
+    parser.add_argument("--block-program-change", nargs="*", default=None, help="Ports or substrings to block Program Change on (e.g. 'Pianoteq' 'VirMIDI 0-1' or 'all')")
     parser.add_argument("--lazy", "--lazy-loading", action="store_true", default=False, help="Enable fast lazy loading (skips parsing duration/BPM until played)")
     args = parser.parse_args()
 
@@ -48,10 +49,19 @@ def main():
     print("🎻  40HOURSADAY - Practice Partner")
     print("=" * 60)
     
+    # Process allow/block program change flags
+    allow_patterns = args.allow_program_change
+    if allow_patterns is not None and len(allow_patterns) == 0:
+        allow_patterns = ["all"]
+    block_patterns = args.block_program_change
+    if block_patterns is not None and len(block_patterns) == 0:
+        block_patterns = ["all"]
+
     # Initialize Engine & Library
     player = MidiPlayer(
         default_port_substring=args.midi_port,
-        ignore_program_change=not args.allow_program_change
+        allow_program_change_patterns=allow_patterns,
+        block_program_change_patterns=block_patterns
     )
     library = MidiLibrary(search_dirs=valid_dirs, lazy_loading=args.lazy)
 
