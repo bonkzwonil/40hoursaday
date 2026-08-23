@@ -814,3 +814,317 @@ body {
     transform: translateX(-50%) translateY(0);
     opacity: 1;
 }
+
+/* Modal Overlay & Mixer Drawer */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(5, 8, 15, 0.75);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 16px;
+    z-index: 1000;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.modal-overlay.open {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.modal-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7), 0 0 30px var(--primary-glow);
+    width: 100%;
+    max-width: 520px;
+    max-height: 88vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transform: scale(0.95) translateY(10px);
+    transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.modal-overlay.open .modal-card {
+    transform: scale(1) translateY(0);
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 18px 20px;
+    border-bottom: 1px solid var(--border-subtle);
+    background: rgba(30, 41, 59, 0.4);
+}
+
+.modal-title-group {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.modal-icon {
+    font-size: 24px;
+    filter: drop-shadow(0 2px 6px var(--primary-glow));
+}
+
+.modal-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #fff;
+}
+
+.modal-subtitle {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
+.btn-close {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.btn-close:hover, .btn-close:active {
+    background: var(--bg-card-sub);
+    color: #fff;
+    border-color: var(--text-muted);
+}
+
+.mixer-body {
+    padding: 20px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.mixer-section {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.mixer-section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.mixer-section-title {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+}
+
+.mixer-refresh-indicator {
+    font-size: 14px;
+    cursor: pointer;
+    opacity: 0.7;
+    transition: transform 0.3s ease, opacity 0.15s ease;
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
+}
+
+.mixer-refresh-indicator:hover, .mixer-refresh-indicator:active {
+    opacity: 1;
+    transform: rotate(180deg);
+}
+
+.mixer-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.mixer-loading, .mixer-empty {
+    padding: 16px;
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 0.85rem;
+    background: var(--bg-input);
+    border-radius: var(--radius-md);
+    border: 1px dashed var(--border);
+}
+
+/* Individual Channel Card */
+.mixer-channel-card {
+    background: var(--bg-card-sub);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.mixer-channel-card.muted {
+    opacity: 0.65;
+    border-color: rgba(239, 68, 68, 0.4);
+}
+
+.mixer-channel-card.shairport {
+    border-left: 4px solid var(--accent);
+}
+
+.mixer-channel-card.pianoteq {
+    border-left: 4px solid var(--primary);
+}
+
+.mixer-channel-card.master {
+    border-left: 4px solid var(--success);
+}
+
+.mixer-channel-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.mixer-channel-meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    overflow: hidden;
+}
+
+.mixer-channel-icon {
+    font-size: 20px;
+    flex-shrink: 0;
+}
+
+.mixer-channel-names {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.mixer-channel-title {
+    font-size: 0.92rem;
+    font-weight: 700;
+    color: #fff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.mixer-channel-sub {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.mixer-channel-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.mixer-vol-badge {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--accent);
+    min-width: 44px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.btn-mute {
+    width: 36px;
+    height: 36px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.btn-mute:active {
+    transform: scale(0.92);
+}
+
+.btn-mute.is-muted {
+    background: rgba(239, 68, 68, 0.2);
+    border-color: var(--danger);
+    color: var(--danger);
+}
+
+/* Touch Slider Control */
+.mixer-slider-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.mixer-slider {
+    flex: 1;
+    -webkit-appearance: none;
+    appearance: none;
+    height: 12px;
+    border-radius: var(--radius-full);
+    background: var(--bg-input);
+    outline: none;
+    border: 1px solid var(--border);
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+
+.mixer-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: #fff;
+    border: 2px solid var(--primary);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+    cursor: pointer;
+    transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+
+.mixer-slider::-moz-range-thumb {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: #fff;
+    border: 2px solid var(--primary);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+    cursor: pointer;
+}
+
+.mixer-slider:active::-webkit-slider-thumb {
+    transform: scale(1.15);
+    box-shadow: 0 0 12px var(--primary-glow);
+}
+

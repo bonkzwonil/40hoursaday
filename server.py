@@ -21,6 +21,7 @@ from typing import Optional
 
 from player import MidiPlayer
 from library import MidiLibrary
+from mixer import PulseMixer
 
 class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
     daemon_threads = True
@@ -89,6 +90,10 @@ class PracticePartnerHandler(SimpleHTTPRequestHandler):
         if path == "/api/ports":
             ports = self.player.get_available_ports()
             self._send_json({"ports": ports, "current": self.player.target_port_name})
+            return
+
+        if path == "/api/mixer":
+            self._send_json(PulseMixer.get_status())
             return
 
         if path == "/api/events":
@@ -232,6 +237,50 @@ class PracticePartnerHandler(SimpleHTTPRequestHandler):
         if path == "/api/panic":
             self.player.panic()
             self._send_json({"success": True, "message": "Panic / All notes reset sent"})
+            return
+
+        if path == "/api/mixer/sink/volume":
+            body = self._parse_json_body() or {}
+            sink_id = body.get("id")
+            vol = body.get("volume")
+            if sink_id is not None and vol is not None:
+                ok = PulseMixer.set_sink_volume(int(sink_id), int(vol))
+                self._send_json({"success": ok, "status": PulseMixer.get_status()})
+            else:
+                self._send_error("Missing 'id' or 'volume' parameter")
+            return
+
+        if path == "/api/mixer/sink/mute":
+            body = self._parse_json_body() or {}
+            sink_id = body.get("id")
+            mute = body.get("mute")
+            if sink_id is not None and mute is not None:
+                ok = PulseMixer.set_sink_mute(int(sink_id), bool(mute))
+                self._send_json({"success": ok, "status": PulseMixer.get_status()})
+            else:
+                self._send_error("Missing 'id' or 'mute' parameter")
+            return
+
+        if path == "/api/mixer/stream/volume":
+            body = self._parse_json_body() or {}
+            stream_id = body.get("id")
+            vol = body.get("volume")
+            if stream_id is not None and vol is not None:
+                ok = PulseMixer.set_stream_volume(int(stream_id), int(vol))
+                self._send_json({"success": ok, "status": PulseMixer.get_status()})
+            else:
+                self._send_error("Missing 'id' or 'volume' parameter")
+            return
+
+        if path == "/api/mixer/stream/mute":
+            body = self._parse_json_body() or {}
+            stream_id = body.get("id")
+            mute = body.get("mute")
+            if stream_id is not None and mute is not None:
+                ok = PulseMixer.set_stream_mute(int(stream_id), bool(mute))
+                self._send_json({"success": ok, "status": PulseMixer.get_status()})
+            else:
+                self._send_error("Missing 'id' or 'mute' parameter")
             return
 
         if path == "/api/upload":

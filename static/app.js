@@ -46,7 +46,15 @@
             toastPort: "MIDI Port: {port}",
             toastUploading: "Uploading {file}...",
             toastUploadSuccess: "✅ \"{title}\" added!",
-            toastUploadError: "Upload failed: {error}"
+            toastUploadError: "Upload failed: {error}",
+            mixerTitle: "Audio Mixer",
+            mixerSubtitle: "PulseAudio Volume Control",
+            mixerOutputs: "OUTPUT (MASTER)",
+            mixerStreams: "APPLICATIONS & STREAMS",
+            mixerLoading: "Loading audio streams...",
+            mixerNoStreams: "No active application streams",
+            mixerMute: "Mute",
+            mixerUnmute: "Unmute"
         },
         de: {
             appSubtitle: "MIDI Übungsbegleiter",
@@ -90,7 +98,15 @@
             toastPort: "MIDI Port: {port}",
             toastUploading: "Lade {file} hoch...",
             toastUploadSuccess: "✅ \"{title}\" hinzugefügt!",
-            toastUploadError: "Upload-Fehler: {error}"
+            toastUploadError: "Upload-Fehler: {error}",
+            mixerTitle: "Audio-Mischpult",
+            mixerSubtitle: "PulseAudio Lautstärkeregelung",
+            mixerOutputs: "AUSGANG (MASTER)",
+            mixerStreams: "ANWENDUNGEN & AUDIO-STREAMS",
+            mixerLoading: "Lade Audio-Streams...",
+            mixerNoStreams: "Keine aktiven Audio-Streams",
+            mixerMute: "Stummschalten",
+            mixerUnmute: "Stummschaltung aufheben"
         }
     };
 
@@ -174,7 +190,14 @@
         searchInput: document.getElementById('search-input'),
         btnClearSearch: document.getElementById('btn-clear-search'),
         fileUploadInput: document.getElementById('file-upload-input'),
-        toast: document.getElementById('toast')
+        toast: document.getElementById('toast'),
+        
+        btnMixer: document.getElementById('btn-mixer'),
+        mixerModal: document.getElementById('mixer-modal'),
+        btnCloseMixer: document.getElementById('btn-close-mixer'),
+        mixerRefreshBtn: document.getElementById('mixer-refresh-btn'),
+        mixerSinksList: document.getElementById('mixer-sinks-list'),
+        mixerStreamsList: document.getElementById('mixer-streams-list')
     };
 
     // Apply translations to DOM elements
@@ -687,6 +710,254 @@
             }
             elements.fileUploadInput.value = '';
         });
+
+        // Audio Mixer Modal Events
+        if (elements.btnMixer) {
+            elements.btnMixer.addEventListener('click', () => {
+                if (isMixerOpen) {
+                    closeMixer();
+                } else {
+                    openMixer();
+                }
+            });
+        }
+
+        if (elements.btnCloseMixer) {
+            elements.btnCloseMixer.addEventListener('click', closeMixer);
+        }
+
+        if (elements.mixerModal) {
+            elements.mixerModal.addEventListener('click', (e) => {
+                if (e.target === elements.mixerModal) {
+                    closeMixer();
+                }
+            });
+        }
+
+        if (elements.mixerRefreshBtn) {
+            elements.mixerRefreshBtn.addEventListener('click', () => {
+                loadMixer();
+            });
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && isMixerOpen) {
+                closeMixer();
+            }
+        });
+    }
+
+    // Mixer Controller
+    let isMixerOpen = false;
+    let mixerPollTimer = null;
+    let isDraggingMixer = false;
+    let mixerDebounceTimers = {};
+
+    function escapeHtml(str) {
+        if (!str) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
+    function debounceMixer(key, fn, delay = 50) {
+        clearTimeout(mixerDebounceTimers[key]);
+        mixerDebounceTimers[key] = setTimeout(fn, delay);
+    }
+
+    async function loadMixer() {
+        try {
+            const data = await apiGet('mixer');
+            if (data && isMixerOpen && !isDraggingMixer) {
+                renderMixer(data);
+            }
+        } catch (err) {
+            console.error("Failed to load mixer:", err);
+        }
+    }
+
+    function getStreamIcon(name, mediaName) {
+        const str = ((name || '') + ' ' + (mediaName || '')).toLowerCase();
+        if (str.includes('shairport') || str.includes('airplay')) return '📱';
+        if (str.includes('pianoteq')) return '🎹';
+        if (str.includes('spotify') || str.includes('librespot')) return '🎵';
+        if (str.includes('browser') || str.includes('chrome') || str.includes('firefox')) return '🌐';
+        return '🔊';
+    }
+
+    function getChannelClass(name) {
+        const str = (name || '').toLowerCase();
+        if (str.includes('shairport') || str.includes('airplay')) return 'shairport';
+        if (str.includes('pianoteq')) return 'pianoteq';
+        return '';
+    }
+
+    function renderMixer(data) {
+        const sinks = data.sinks || [];
+        const streams = data.streams || [];
+
+        // Render Sinks (Master Outputs)
+        if (sinks.length === 0) {
+            elements.mixerSinksList.innerHTML = `<div class="mixer-empty">${t('mixerLoading')}</div>`;
+        } else {
+            elements.mixerSinksList.innerHTML = sinks.map(s => `
+                <div class="mixer-channel-card master ${s.mute ? 'muted' : ''}" id="sink-card-${s.id}">
+                    <div class="mixer-channel-top">
+                        <div class="mixer-channel-meta">
+                            <span class="mixer-channel-icon">🔊</span>
+                            <div class="mixer-channel-names">
+                                <span class="mixer-channel-title">${escapeHtml(s.description)}</span>
+                                <span class="mixer-channel-sub">${escapeHtml(s.name)}</span>
+                            </div>
+                        </div>
+                        <div class="mixer-channel-actions">
+                            <span class="mixer-vol-badge" id="sink-val-${s.id}">${s.volume}%</span>
+                            <button class="btn-mute ${s.mute ? 'is-muted' : ''}" data-sink-mute="${s.id}" data-muted="${s.mute}" title="${s.mute ? t('mixerUnmute') : t('mixerMute')}">
+                                ${s.mute ? '🔇' : '🔊'}
+                            </button>
+                        </div>
+                    </div>
+                    <div class="mixer-slider-row">
+                        <input type="range" class="mixer-slider" min="0" max="100" value="${s.volume}" data-sink-slider="${s.id}">
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Render Streams (Application Inputs)
+        if (streams.length === 0) {
+            elements.mixerStreamsList.innerHTML = `<div class="mixer-empty">${t('mixerNoStreams')}</div>`;
+        } else {
+            elements.mixerStreamsList.innerHTML = streams.map(st => {
+                const icon = getStreamIcon(st.name, st.raw_media);
+                const cardClass = getChannelClass(st.name);
+                return `
+                    <div class="mixer-channel-card ${cardClass} ${st.mute ? 'muted' : ''}" id="stream-card-${st.id}">
+                        <div class="mixer-channel-top">
+                            <div class="mixer-channel-meta">
+                                <span class="mixer-channel-icon">${icon}</span>
+                                <div class="mixer-channel-names">
+                                    <span class="mixer-channel-title">${escapeHtml(st.name)}</span>
+                                    <span class="mixer-channel-sub">${escapeHtml(st.raw_media || st.raw_app || '')}</span>
+                                </div>
+                            </div>
+                            <div class="mixer-channel-actions">
+                                <span class="mixer-vol-badge" id="stream-val-${st.id}">${st.volume}%</span>
+                                <button class="btn-mute ${st.mute ? 'is-muted' : ''}" data-stream-mute="${st.id}" data-muted="${st.mute}" title="${st.mute ? t('mixerUnmute') : t('mixerMute')}">
+                                    ${st.mute ? '🔇' : '🔊'}
+                                </button>
+                            </div>
+                        </div>
+                        <div class="mixer-slider-row">
+                            <input type="range" class="mixer-slider" min="0" max="100" value="${st.volume}" data-stream-slider="${st.id}">
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        bindMixerCardEvents();
+    }
+
+    function bindMixerCardEvents() {
+        // Sink sliders
+        elements.mixerSinksList.querySelectorAll('[data-sink-slider]').forEach(slider => {
+            const sinkId = parseInt(slider.getAttribute('data-sink-slider'), 10);
+            const valBadge = document.getElementById(`sink-val-${sinkId}`);
+
+            const onInput = (e) => {
+                isDraggingMixer = true;
+                const vol = parseInt(e.target.value, 10);
+                if (valBadge) valBadge.textContent = `${vol}%`;
+                debounceMixer(`sink_${sinkId}`, () => {
+                    apiPost('mixer/sink/volume', { id: sinkId, volume: vol });
+                }, 40);
+            };
+
+            const onChange = () => {
+                isDraggingMixer = false;
+            };
+
+            slider.addEventListener('input', onInput);
+            slider.addEventListener('change', onChange);
+            slider.addEventListener('touchend', onChange);
+            slider.addEventListener('mouseup', onChange);
+        });
+
+        // Sink mute buttons
+        elements.mixerSinksList.querySelectorAll('[data-sink-mute]').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const sinkId = parseInt(btn.getAttribute('data-sink-mute'), 10);
+                const isCurrentlyMuted = btn.getAttribute('data-muted') === 'true';
+                const res = await apiPost('mixer/sink/mute', { id: sinkId, mute: !isCurrentlyMuted });
+                if (res && res.status) renderMixer(res.status);
+            });
+        });
+
+        // Stream sliders
+        elements.mixerStreamsList.querySelectorAll('[data-stream-slider]').forEach(slider => {
+            const streamId = parseInt(slider.getAttribute('data-stream-slider'), 10);
+            const valBadge = document.getElementById(`stream-val-${streamId}`);
+
+            const onInput = (e) => {
+                isDraggingMixer = true;
+                const vol = parseInt(e.target.value, 10);
+                if (valBadge) valBadge.textContent = `${vol}%`;
+                debounceMixer(`stream_${streamId}`, () => {
+                    apiPost('mixer/stream/volume', { id: streamId, volume: vol });
+                }, 40);
+            };
+
+            const onChange = () => {
+                isDraggingMixer = false;
+            };
+
+            slider.addEventListener('input', onInput);
+            slider.addEventListener('change', onChange);
+            slider.addEventListener('touchend', onChange);
+            slider.addEventListener('mouseup', onChange);
+        });
+
+        // Stream mute buttons
+        elements.mixerStreamsList.querySelectorAll('[data-stream-mute]').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const streamId = parseInt(btn.getAttribute('data-stream-mute'), 10);
+                const isCurrentlyMuted = btn.getAttribute('data-muted') === 'true';
+                const res = await apiPost('mixer/stream/mute', { id: streamId, mute: !isCurrentlyMuted });
+                if (res && res.status) renderMixer(res.status);
+            });
+        });
+    }
+
+    function openMixer() {
+        isMixerOpen = true;
+        elements.mixerModal.style.display = 'flex';
+        void elements.mixerModal.offsetWidth;
+        elements.mixerModal.classList.add('open');
+        loadMixer();
+        if (mixerPollTimer) clearInterval(mixerPollTimer);
+        mixerPollTimer = setInterval(() => {
+            if (isMixerOpen && !isDraggingMixer) {
+                loadMixer();
+            }
+        }, 1500);
+    }
+
+    function closeMixer() {
+        isMixerOpen = false;
+        elements.mixerModal.classList.remove('open');
+        if (mixerPollTimer) {
+            clearInterval(mixerPollTimer);
+            mixerPollTimer = null;
+        }
+        setTimeout(() => {
+            if (!isMixerOpen) {
+                elements.mixerModal.style.display = 'none';
+            }
+        }, 200);
     }
 
     // Real-time Event Stream (SSE)

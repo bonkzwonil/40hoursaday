@@ -37,6 +37,11 @@
                     </select>
                 </div>
 
+                <!-- Mixer Button -->
+                <button id="btn-mixer" class="btn btn-icon btn-secondary" title="Audio Mixer" data-i18n-title="mixerTitle">
+                    🎚️
+                </button>
+
                 <!-- Panic Button -->
                 <button id="btn-panic" class="btn btn-icon btn-danger" title="MIDI Panic (Stop all notes)" data-i18n-title="panicTitle">
                     🚨
@@ -173,6 +178,45 @@
                 <div class="loading-spinner" data-i18n="loadingPieces">Loading pieces...</div>
             </div>
         </section>
+    </div>
+
+    <!-- Audio Mixer Modal Drawer -->
+    <div id="mixer-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-card mixer-card">
+            <div class="modal-header">
+                <div class="modal-title-group">
+                    <span class="modal-icon">🎚️</span>
+                    <div>
+                        <h3 class="modal-title" data-i18n="mixerTitle">Audio Mixer</h3>
+                        <p class="modal-subtitle" data-i18n="mixerSubtitle">PulseAudio Volume Control</p>
+                    </div>
+                </div>
+                <button id="btn-close-mixer" class="btn btn-icon btn-sm btn-close" title="Close">✕</button>
+            </div>
+            
+            <div class="mixer-body" id="mixer-body">
+                <!-- Master / Sinks -->
+                <div class="mixer-section">
+                    <div class="mixer-section-header">
+                        <span class="mixer-section-title" data-i18n="mixerOutputs">OUTPUT (MASTER)</span>
+                    </div>
+                    <div id="mixer-sinks-list" class="mixer-list">
+                        <div class="mixer-loading" data-i18n="mixerLoading">Loading audio devices...</div>
+                    </div>
+                </div>
+
+                <!-- Streams / Apps -->
+                <div class="mixer-section">
+                    <div class="mixer-section-header">
+                        <span class="mixer-section-title" data-i18n="mixerStreams">APPLICATIONS & STREAMS</span>
+                        <span class="mixer-refresh-indicator" id="mixer-refresh-btn" title="Refresh">🔄</span>
+                    </div>
+                    <div id="mixer-streams-list" class="mixer-list">
+                        <div class="mixer-loading" data-i18n="mixerLoading">Loading active streams...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Notification Toast -->
