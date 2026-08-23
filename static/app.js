@@ -262,11 +262,12 @@
         // Port
         if (s.port) {
             elements.portIndicator.classList.add('connected');
-            if (elements.portSelect.value !== s.port) {
-                populatePorts(s.available_ports || [], s.port);
-            }
         } else {
             elements.portIndicator.classList.remove('connected');
+        }
+
+        if (s.available_ports && document.activeElement !== elements.portSelect) {
+            populatePorts(s.available_ports, s.port);
         }
 
         // Track Info
@@ -375,28 +376,47 @@
     }
 
     function populatePorts(ports, selectedPort) {
-        elements.portSelect.innerHTML = '';
-        if (!ports || ports.length === 0) {
-            const opt = document.createElement('option');
-            opt.value = '';
-            opt.textContent = t('noMidiPort');
-            elements.portSelect.appendChild(opt);
-            return;
-        }
+        if (!ports) ports = [];
 
+        // Normalize unique non-empty ports
+        const uniquePorts = [];
         const seen = new Set();
         ports.forEach(p => {
-            if (!p || seen.has(p)) return;
-            seen.add(p);
-
-            const opt = document.createElement('option');
-            opt.value = p;
-            opt.textContent = formatPortLabel(p);
-            if (p === selectedPort) {
-                opt.selected = true;
+            if (p && !seen.has(p)) {
+                seen.add(p);
+                uniquePorts.push(p);
             }
-            elements.portSelect.appendChild(opt);
         });
+
+        // Check if options actually changed to avoid blowing away user selection / DOM state
+        const currentOptions = Array.from(elements.portSelect.options).map(o => o.value).filter(v => v !== '');
+        const optionsSame = uniquePorts.length === currentOptions.length && 
+                            uniquePorts.every((p, idx) => p === currentOptions[idx]);
+
+        if (!optionsSame) {
+            elements.portSelect.innerHTML = '';
+            if (uniquePorts.length === 0) {
+                const opt = document.createElement('option');
+                opt.value = '';
+                opt.textContent = t('noMidiPort');
+                elements.portSelect.appendChild(opt);
+            } else {
+                uniquePorts.forEach(p => {
+                    const opt = document.createElement('option');
+                    opt.value = p;
+                    opt.textContent = formatPortLabel(p);
+                    elements.portSelect.appendChild(opt);
+                });
+            }
+        }
+
+        // Set selected value without resetting if user is currently interacting
+        if (selectedPort) {
+            const hasOption = Array.from(elements.portSelect.options).some(o => o.value === selectedPort);
+            if (hasOption && elements.portSelect.value !== selectedPort) {
+                elements.portSelect.value = selectedPort;
+            }
+        }
     }
 
     // Library Rendering
@@ -462,15 +482,16 @@
     // Actions
     async function playFile(filepath) {
         showToast(t('toastLoading', { file: filepath.split('/').pop() }));
+        const currentPort = elements.portSelect.value || state.status.port;
         const res = await apiPost('play', {
             file: filepath,
             speed: state.status.speed,
-            port: elements.portSelect.value,
+            port: currentPort,
             loop: state.status.loop,
             count_in: state.status.count_in_bars,
             transpose: state.status.transpose
         });
-        if (res.status) {
+        if (res && res.status) {
             updateUI(res.status);
         }
     }
@@ -577,8 +598,9 @@
         elements.portSelect.addEventListener('change', async (e) => {
             const port = e.target.value;
             if (port) {
+                state.status.port = port;
                 const res = await apiPost('port', { port });
-                if (res.status) updateUI(res.status);
+                if (res && res.status) updateUI(res.status);
                 showToast(t('toastPort', { port: formatPortLabel(port) }));
             }
         });

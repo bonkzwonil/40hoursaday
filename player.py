@@ -80,15 +80,24 @@ class MidiPlayer:
 
     def set_port(self, port_name: str) -> bool:
         """Sets target MIDI output port."""
+        if not port_name:
+            return False
         available = self.get_available_ports()
+        matched_port = None
         if port_name in available:
-            self.target_port_name = port_name
+            matched_port = port_name
+        else:
+            # Try substring match
+            for p in available:
+                if port_name.lower() in p.lower():
+                    matched_port = p
+                    break
+
+        if matched_port:
+            with self.lock:
+                self.target_port_name = matched_port
+                self._wake_event.set()
             return True
-        # Try substring match
-        for p in available:
-            if port_name.lower() in p.lower():
-                self.target_port_name = p
-                return True
         return False
 
     def load_file(self, filepath: str) -> bool:
@@ -314,115 +323,167 @@ class MidiPlayer:
         return True
 
     def _playback_loop(self):
-        """Core playback loop thread."""
-        target_port = self.target_port_name
-        if not target_port:
-            self._init_port()
-            target_port = self.target_port_name
-            if not target_port:
+        """Core playback loop thread with dynamic port switching."""
+        active_port_obj = None
+        active_port_name = None
+
+        def _get_current_target_port():
+            with self.lock:
+                if not self.target_port_name:
+                    self._init_port()
+                return self.target_port_name
+
+        def _ensure_active_port():
+            nonlocal active_port_obj, active_port_name
+            desired = _get_current_target_port()
+            if not desired:
+                return None
+            if active_port_obj is not None and active_port_name == desired:
+                return active_port_obj
+
+            # Switch port: send all notes off to old port and close it
+            if active_port_obj is not None:
+                try:
+                    for ch in range(16):
+                        active_port_obj.send(mido.Message('control_change', channel=ch, control=123, value=0))
+                        active_port_obj.send(mido.Message('control_change', channel=ch, control=120, value=0))
+                        active_port_obj.send(mido.Message('control_change', channel=ch, control=64, value=0))
+                    active_port_obj.close()
+                except Exception as e:
+                    print(f"[MidiPlayer] Error closing old port {active_port_name}: {e}")
+                active_port_obj = None
+                active_port_name = None
+
+            try:
+                active_port_obj = mido.open_output(desired)
+                active_port_name = desired
+                return active_port_obj
+            except Exception as e:
+                print(f"[MidiPlayer] Failed to open MIDI port '{desired}': {e}")
+                return None
+
+        try:
+            port = _ensure_active_port()
+            if not port:
                 print("[MidiPlayer] No MIDI port available for playback.")
                 with self.lock:
                     self.state = "idle"
                 return
 
-        try:
-            with mido.open_output(target_port) as port:
-                while True:
-                    with self.lock:
-                        if self._should_stop:
-                            break
+            while True:
+                with self.lock:
+                    if self._should_stop:
+                        break
 
-                    # Metronome Count-in if starting at position 0
-                    if self.position <= 0.05 and self.count_in_bars > 0:
-                        ok = self._play_count_in(port)
-                        if not ok or self._should_stop:
-                            break
+                port = _ensure_active_port()
+                if not port:
+                    break
 
-                    with self.lock:
-                        self._clock_base_time = time.time()
-                        self._song_base_pos = self.position
-                        event_idx = 0
-                        while event_idx < len(self.events) and self.events[event_idx][0] < self.position:
-                            event_idx += 1
+                # Metronome Count-in if starting at position 0
+                if self.position <= 0.05 and self.count_in_bars > 0:
+                    ok = self._play_count_in(port)
+                    if not ok or self._should_stop:
+                        break
 
-                    while event_idx < len(self.events):
-                        with self.lock:
-                            if self._should_stop:
-                                break
-
-                            while self.state == "paused":
-                                self._wake_event.clear()
-                                self.lock.release()
-                                self._wake_event.wait(timeout=0.2)
-                                self.lock.acquire()
-                                if self._should_stop:
-                                    break
-                                if self.state == "playing":
-                                    self._clock_base_time = time.time()
-                                    self._song_base_pos = self.position
-                                    event_idx = 0
-                                    while event_idx < len(self.events) and self.events[event_idx][0] < self.position:
-                                        event_idx += 1
-
-                            if self._should_stop:
-                                break
-
-                            event_t, orig_msg = self.events[event_idx]
-                            current_speed = self.speed
-                            start_wall = self._clock_base_time
-                            start_pos = self._song_base_pos
-
-                        # Calculate wall clock target for next message
-                        target_wall_time = start_wall + (event_t - start_pos) / current_speed
-                        delay = target_wall_time - time.time()
-
-                        if delay > 0.001:
-                            woken = self._wake_event.wait(timeout=delay)
-                            if woken:
-                                self._wake_event.clear()
-                                with self.lock:
-                                    if self._should_stop:
-                                        break
-                                    event_idx = 0
-                                    while event_idx < len(self.events) and self.events[event_idx][0] < self.position:
-                                        event_idx += 1
-                                continue
-
-                        with self.lock:
-                            msg_to_send = orig_msg.copy()
-                            if self.transpose != 0 and msg_to_send.type in ('note_on', 'note_off', 'polytouch'):
-                                if getattr(msg_to_send, 'channel', 0) != 9:
-                                    new_note = max(0, min(127, msg_to_send.note + self.transpose))
-                                    msg_to_send.note = new_note
-                            self.position = event_t
-
-                        try:
-                            port.send(msg_to_send)
-                        except Exception as e:
-                            print(f"[MidiPlayer] Error sending message: {e}")
-
+                with self.lock:
+                    self._clock_base_time = time.time()
+                    self._song_base_pos = self.position
+                    event_idx = 0
+                    while event_idx < len(self.events) and self.events[event_idx][0] < self.position:
                         event_idx += 1
 
+                while event_idx < len(self.events):
                     with self.lock:
                         if self._should_stop:
                             break
 
-                        if self.loop and not self._should_stop:
-                            self.position = 0.0
-                            self._clock_base_time = time.time()
-                            self._song_base_pos = 0.0
-                            for ch in range(16):
-                                port.send(mido.Message('control_change', channel=ch, control=123, value=0))
-                            time.sleep(0.3)
-                            continue
-                        else:
-                            self.state = "idle"
-                            self.position = 0.0
+                        while self.state == "paused":
+                            self._wake_event.clear()
+                            self.lock.release()
+                            self._wake_event.wait(timeout=0.2)
+                            self.lock.acquire()
+                            if self._should_stop:
+                                break
+                            if self.state == "playing":
+                                self._clock_base_time = time.time()
+                                self._song_base_pos = self.position
+                                event_idx = 0
+                                while event_idx < len(self.events) and self.events[event_idx][0] < self.position:
+                                    event_idx += 1
+
+                        if self._should_stop:
                             break
 
+                        event_t, orig_msg = self.events[event_idx]
+                        current_speed = self.speed
+                        start_wall = self._clock_base_time
+                        start_pos = self._song_base_pos
+
+                    # Calculate wall clock target for next message
+                    target_wall_time = start_wall + (event_t - start_pos) / current_speed
+                    delay = target_wall_time - time.time()
+
+                    if delay > 0.001:
+                        woken = self._wake_event.wait(timeout=delay)
+                        if woken:
+                            self._wake_event.clear()
+                            with self.lock:
+                                if self._should_stop:
+                                    break
+                                event_idx = 0
+                                while event_idx < len(self.events) and self.events[event_idx][0] < self.position:
+                                    event_idx += 1
+                            continue
+
+                    port = _ensure_active_port()
+                    if not port:
+                        break
+
+                    with self.lock:
+                        msg_to_send = orig_msg.copy()
+                        if self.transpose != 0 and msg_to_send.type in ('note_on', 'note_off', 'polytouch'):
+                            if getattr(msg_to_send, 'channel', 0) != 9:
+                                new_note = max(0, min(127, msg_to_send.note + self.transpose))
+                                msg_to_send.note = new_note
+                        self.position = event_t
+
+                    try:
+                        port.send(msg_to_send)
+                    except Exception as e:
+                        print(f"[MidiPlayer] Error sending message: {e}")
+
+                    event_idx += 1
+
+                with self.lock:
+                    if self._should_stop:
+                        break
+
+                    if self.loop and not self._should_stop:
+                        self.position = 0.0
+                        self._clock_base_time = time.time()
+                        self._song_base_pos = 0.0
+                        if port:
+                            for ch in range(16):
+                                port.send(mido.Message('control_change', channel=ch, control=123, value=0))
+                        time.sleep(0.3)
+                        continue
+                    else:
+                        self.state = "idle"
+                        self.position = 0.0
+                        break
+
         except Exception as e:
-            print(f"[MidiPlayer] Output error on {target_port}: {e}")
+            print(f"[MidiPlayer] Playback loop exception: {e}")
         finally:
+            if active_port_obj is not None:
+                try:
+                    for ch in range(16):
+                        active_port_obj.send(mido.Message('control_change', channel=ch, control=123, value=0))
+                        active_port_obj.send(mido.Message('control_change', channel=ch, control=120, value=0))
+                        active_port_obj.send(mido.Message('control_change', channel=ch, control=64, value=0))
+                    active_port_obj.close()
+                except Exception:
+                    pass
             self.panic()
             with self.lock:
                 self.state = "idle"
