@@ -60,7 +60,7 @@
             appSubtitle: "MIDI Übungsbegleiter",
             loadingPorts: "Lade Ports...",
             noMidiPort: "Kein MIDI Port",
-            panicTitle: "MIDI Panic (Stoppe alle Töne)",
+            panicTitle: "NOTHALT! (Stoppe alle Töne)",
             stateReady: "Bereit",
             statePlaying: "Spielt",
             statePaused: "Pausiert",
