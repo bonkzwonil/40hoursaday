@@ -23,6 +23,7 @@ def main():
     parser.add_argument("-d", "--midi-dir", action="append", help="MIDI directory to scan (can be specified multiple times)")
     parser.add_argument("-m", "--midi-port", default="Midi Through", help="Default MIDI output port substring (default: 'Midi Through')")
     parser.add_argument("--allow-program-change", action="store_true", default=False, help="Allow MIDI Program Change and Bank Select events (default: ignored to protect synth presets)")
+    parser.add_argument("--lazy", "--lazy-loading", action="store_true", default=False, help="Enable fast lazy loading (skips parsing duration/BPM until played)")
     args = parser.parse_args()
 
     # Search directories for MIDI files
@@ -52,7 +53,7 @@ def main():
         default_port_substring=args.midi_port,
         ignore_program_change=not args.allow_program_change
     )
-    library = MidiLibrary(search_dirs=valid_dirs)
+    library = MidiLibrary(search_dirs=valid_dirs, lazy_loading=args.lazy)
 
     print(f"📁 MIDI Directories : {', '.join(library.search_dirs)}")
     files = library.scan_files()

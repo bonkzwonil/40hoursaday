@@ -8,6 +8,7 @@ Handles directory scanning, metadata extraction (duration, bpm),
 caching, and file uploads.
 """
 
+import json
 import os
 import time
 from typing import List, Dict, Any, Optional
@@ -19,9 +20,31 @@ IGNORED_DIRS = {
 }
 
 class MidiLibrary:
-    def __init__(self, search_dirs: List[str]):
+    def __init__(self, search_dirs: List[str], lazy_loading: bool = False):
         self.search_dirs = [os.path.abspath(os.path.expanduser(d)) for d in search_dirs]
+        self.lazy_loading = lazy_loading
+        self.cache_file = os.path.expanduser("~/.cache/40hoursaday/library_cache.json")
         self._meta_cache: Dict[str, Dict[str, Any]] = {}
+        self._load_cache()
+
+    def _load_cache(self) -> None:
+        """Loads cached metadata from disk if available."""
+        if os.path.exists(self.cache_file):
+            try:
+                with open(self.cache_file, "r", encoding="utf-8") as f:
+                    self._meta_cache = json.load(f)
+            except Exception as e:
+                print(f"[MidiLibrary] Warning: Could not load cache ({e}), starting fresh.")
+                self._meta_cache = {}
+
+    def _save_cache(self) -> None:
+        """Persists metadata cache to disk."""
+        try:
+            os.makedirs(os.path.dirname(self.cache_file), exist_ok=True)
+            with open(self.cache_file, "w", encoding="utf-8") as f:
+                json.dump(self._meta_cache, f, indent=2)
+        except Exception as e:
+            print(f"[MidiLibrary] Warning: Could not save cache: {e}")
 
     def get_upload_dir(self) -> str:
         """Returns the primary upload directory, ensuring it exists."""
@@ -88,9 +111,11 @@ class MidiLibrary:
             }
 
     def scan_files(self) -> List[Dict[str, Any]]:
-        """Scans all search directories for MIDI files quickly."""
+        """Scans all search directories for MIDI files quickly with disk caching."""
         results = []
         seen_paths = set()
+        initial_cache_size = len(self._meta_cache)
+        cache_dirty = False
 
         for d in self.search_dirs:
             if not os.path.exists(d):
@@ -113,7 +138,37 @@ class MidiLibrary:
                         full_path = os.path.abspath(os.path.join(root, f))
                         if full_path not in seen_paths:
                             seen_paths.add(full_path)
-                            results.append(self.get_file_metadata(full_path))
+                            cached = self._meta_cache.get(full_path)
+                            
+                            try:
+                                mtime = os.path.getmtime(full_path)
+                            except OSError:
+                                mtime = 0
+
+                            if cached and cached.get("mtime") == mtime:
+                                results.append(cached)
+                            elif self.lazy_loading:
+                                # Lightweight metadata without parsing binary MIDI events
+                                filename = os.path.basename(full_path)
+                                display_name = os.path.splitext(filename)[0].replace("_", " ").replace("-", " ")
+                                results.append({
+                                    "filepath": full_path,
+                                    "filename": filename,
+                                    "display_name": display_name,
+                                    "size_bytes": os.path.getsize(full_path) if mtime else 0,
+                                    "mtime": mtime,
+                                    "mtime_str": time.strftime("%Y-%m-%d %H:%M", time.localtime(mtime)) if mtime else "",
+                                    "duration": 0.0,
+                                    "duration_str": "--:--",
+                                    "bpm": None
+                                })
+                            else:
+                                cache_dirty = True
+                                results.append(self.get_file_metadata(full_path))
+
+        # Save cache if new files were parsed or updated
+        if cache_dirty or len(self._meta_cache) != initial_cache_size:
+            self._save_cache()
 
         # Sort alphabetically by display name
         results.sort(key=lambda x: x.get("display_name", "").lower())
@@ -137,7 +192,9 @@ class MidiLibrary:
         try:
             with open(target_path, "wb") as f:
                 f.write(content)
-            return self.get_file_metadata(target_path)
+            meta = self.get_file_metadata(target_path)
+            self._save_cache()
+            return meta
         except Exception as e:
             print(f"[MidiLibrary] Error saving upload: {e}")
             return None
@@ -152,6 +209,7 @@ class MidiLibrary:
         try:
             os.remove(norm_path)
             self._meta_cache.pop(norm_path, None)
+            self._save_cache()
             return True
         except Exception as e:
             print(f"[MidiLibrary] Error deleting {norm_path}: {e}")

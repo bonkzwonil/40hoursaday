@@ -468,8 +468,8 @@
                 <div class="track-main">
                     <div class="track-name" title="${item.filename}">${item.display_name}</div>
                     <div class="track-meta">
-                        <span>⏱ ${item.duration_str}</span>
-                        <span>🎵 ${item.bpm} BPM</span>
+                        ${item.duration_str && item.duration_str !== '--:--' ? `<span>⏱ ${item.duration_str}</span>` : ''}
+                        ${item.bpm ? `<span>🎵 ${item.bpm} BPM</span>` : ''}
                     </div>
                 </div>
                 <div class="track-actions">
