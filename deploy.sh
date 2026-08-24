@@ -14,7 +14,14 @@ echo "🚀 Deploying 40hoursaday to ${TARGET_HOST}:${TARGET_DIR}..."
 ssh "${TARGET_HOST}" "mkdir -p ${TARGET_DIR}/midi_files ${TARGET_DIR}/static ~/.config/systemd/user"
 
 # Sync files
-rsync -avz --exclude '.git' --exclude '__pycache__' ./ "${TARGET_HOST}:${TARGET_DIR}/"
+# .claude holds session state and git worktrees - a worktree is a full second
+# copy of this repository, so shipping it would rsync the project into itself.
+rsync -avz \
+    --exclude '.git' \
+    --exclude '.claude' \
+    --exclude '__pycache__' \
+    --exclude '*.pyc' \
+    ./ "${TARGET_HOST}:${TARGET_DIR}/"
 
 # Install systemd service
 ssh "${TARGET_HOST}" "

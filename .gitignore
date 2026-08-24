@@ -6,6 +6,9 @@ __pycache__/
 .vscode/
 .idea/
 
+# Claude Code session state and worktrees
+.claude/
+
 # MIDI files are content, not source. The one sample score in
 # midi_files/ is tracked deliberately (added with -f).
 *.mid
