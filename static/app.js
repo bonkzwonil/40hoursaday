@@ -1407,7 +1407,7 @@
 
     function updateMetronomeFrame() {
         const s = state.status;
-        const beatsPerBar = s.time_sig_num || s.beats_per_bar || 4;
+        let beatsPerBar = s.time_sig_num || s.beats_per_bar || 4;
         renderMetronomeDots(beatsPerBar);
 
         // Count-in Active Mode
@@ -1431,7 +1431,6 @@
         let currentBar = s.bar || 1;
         let currentBeat = s.beat || 1;
         let beatFraction = s.beat_fraction || 0.0;
-        let beatsPerBar = s.time_sig_num || s.beats_per_bar || 4;
         let currentBpm = s.bpm || 120;
 
         // Smooth 60fps interpolation with exact piece tempo map
