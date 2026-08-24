@@ -356,6 +356,28 @@
         state.lastStatusTime = performance.now();
         const s = state.status;
 
+        if (status.beat_map && status.beat_map.length > 0) {
+            state.beatMap = status.beat_map;
+        }
+
+        if (s.state === 'playing') {
+            if (!isPlaybackClockRunning) {
+                isPlaybackClockRunning = true;
+                playbackBaseSongPos = s.position || 0;
+                playbackBaseWallTime = performance.now();
+            } else {
+                const localPos = playbackBaseSongPos + ((performance.now() - playbackBaseWallTime) / 1000.0) * (s.speed || 1.0);
+                if (Math.abs(localPos - s.position) > 0.25) {
+                    playbackBaseSongPos = s.position;
+                    playbackBaseWallTime = performance.now();
+                }
+            }
+        } else {
+            isPlaybackClockRunning = false;
+            playbackBaseSongPos = s.position || 0;
+            playbackBaseWallTime = performance.now();
+        }
+
         // Port & Program Change
         if (s.port) {
             elements.portIndicator.classList.add('connected');
@@ -1388,8 +1410,11 @@
 
     // 60 FPS Flashing Metronome & Bar Counter Animation Engine
     let lastRenderedBeatsPerBar = 0;
-    let lastFlashedBeat = -1;
+    let lastFlashedKey = '';
     let flashTimer = null;
+    let playbackBaseSongPos = 0;
+    let playbackBaseWallTime = performance.now();
+    let isPlaybackClockRunning = false;
 
     function renderMetronomeDots(beatsPerBar) {
         if (!elements.metroDotsRow) return;
@@ -1408,7 +1433,6 @@
     function updateMetronomeFrame() {
         const s = state.status;
         let beatsPerBar = s.time_sig_num || s.beats_per_bar || 4;
-        renderMetronomeDots(beatsPerBar);
 
         // Count-in Active Mode
         if (s.count_in_active) {
@@ -1433,15 +1457,14 @@
         let beatFraction = s.beat_fraction || 0.0;
         let currentBpm = s.bpm || 120;
 
-        // Smooth 60fps interpolation with exact piece tempo map
+        // Smooth monotonic 60fps interpolation with exact piece tempo map
         if (s.state === 'playing') {
-            const now = performance.now();
-            const elapsedSec = (now - state.lastStatusTime) / 1000.0;
-            const currentPos = Math.min(s.duration || 0, s.position + elapsedSec * (s.speed || 1.0));
+            const elapsedSec = (performance.now() - playbackBaseWallTime) / 1000.0;
+            const currentPos = Math.min(s.duration || 0, Math.max(0, playbackBaseSongPos + elapsedSec * (s.speed || 1.0)));
 
-            const beatMap = s.beat_map;
+            const beatMap = state.beatMap || s.beat_map;
             if (beatMap && beatMap.length > 0) {
-                // Binary search for current beat in beatMap
+                // Binary search for exact beat in beatMap
                 let low = 0, high = beatMap.length - 1, idx = 0;
                 while (low <= high) {
                     const mid = (low + high) >> 1;
@@ -1485,26 +1508,29 @@
             elements.metroPulseBar.style.width = s.state === 'playing' ? `${Math.min(100, Math.max(0, beatFraction * 100))}%` : '0%';
         }
 
-        // Trigger Flashing on Beat Transitions during active playback
-        if (s.state === 'playing' && currentBeat !== lastFlashedBeat) {
-            lastFlashedBeat = currentBeat;
-            if (elements.metroDeck) {
-                clearTimeout(flashTimer);
-                elements.metroDeck.classList.remove('flash-accent', 'flash-beat');
-                if (currentBeat === 1) {
-                    elements.metroDeck.classList.add('flash-accent');
-                    flashTimer = setTimeout(() => {
-                        if (elements.metroDeck) elements.metroDeck.classList.remove('flash-accent');
-                    }, 140);
-                } else {
-                    elements.metroDeck.classList.add('flash-beat');
-                    flashTimer = setTimeout(() => {
-                        if (elements.metroDeck) elements.metroDeck.classList.remove('flash-beat');
-                    }, 100);
+        // Trigger Flashing strictly on new Beat Key (e.g. "14:1", "14:2", "14:3", "14:4")
+        if (s.state === 'playing') {
+            const beatKey = `${currentBar}:${currentBeat}`;
+            if (beatKey !== lastFlashedKey) {
+                lastFlashedKey = beatKey;
+                if (elements.metroDeck) {
+                    clearTimeout(flashTimer);
+                    elements.metroDeck.classList.remove('flash-accent', 'flash-beat');
+                    if (currentBeat === 1) {
+                        elements.metroDeck.classList.add('flash-accent');
+                        flashTimer = setTimeout(() => {
+                            if (elements.metroDeck) elements.metroDeck.classList.remove('flash-accent');
+                        }, 130);
+                    } else {
+                        elements.metroDeck.classList.add('flash-beat');
+                        flashTimer = setTimeout(() => {
+                            if (elements.metroDeck) elements.metroDeck.classList.remove('flash-beat');
+                        }, 90);
+                    }
                 }
             }
-        } else if (s.state !== 'playing') {
-            lastFlashedBeat = -1;
+        } else {
+            lastFlashedKey = '';
             if (elements.metroDeck) elements.metroDeck.classList.remove('flash-accent', 'flash-beat');
         }
 

@@ -571,17 +571,17 @@ class MidiPlayer:
             elapsed_real = time.time() - self._clock_base_time
             self.position = min(self.duration, self._song_base_pos + elapsed_real * self.speed)
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self, include_beat_map: bool = True) -> Dict[str, Any]:
         """Returns the current player status for the UI/API."""
         with self.lock:
             self._update_position_unlocked()
             available = self.get_available_ports()
             bar, beat, beat_fraction, beats_per_bar, live_bpm, live_time_sig, time_sig_num, time_sig_den = self.get_bar_beat(self.position)
-            return {
+            res = {
                 "state": self.state,
                 "filename": self.current_filename,
                 "filepath": self.current_filepath,
-                "position": round(self.position, 2),
+                "position": round(self.position, 3),
                 "duration": round(self.duration, 2),
                 "speed": round(self.speed, 2),
                 "speed_percent": int(round(self.speed * 100)),
@@ -606,9 +606,11 @@ class MidiPlayer:
                 "allow_program_change": self.is_program_change_allowed_for_port(self.target_port_name),
                 "port_program_changes": {p: self.is_program_change_allowed_for_port(p) for p in available},
                 "bpm": live_bpm,
-                "time_signature": live_time_sig,
-                "beat_map": self.beat_map
+                "time_signature": live_time_sig
             }
+            if include_beat_map:
+                res["beat_map"] = self.beat_map
+            return res
 
     def _play_count_in(self, port) -> bool:
         """Plays metronome clicks before song starts."""
@@ -779,7 +781,6 @@ class MidiPlayer:
                     with self.lock:
                         msg_ch = getattr(orig_msg, 'channel', None)
                         is_muted = (msg_ch is not None and msg_ch in self.muted_channels)
-                        self.position = event_t
                         if not is_muted:
                             msg_to_send = orig_msg.copy()
                             if self.transpose != 0 and msg_to_send.type in ('note_on', 'note_off', 'polytouch'):

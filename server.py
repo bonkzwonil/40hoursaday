@@ -106,7 +106,7 @@ class PracticePartnerHandler(SimpleHTTPRequestHandler):
 
             try:
                 while True:
-                    status = self.player.get_status()
+                    status = self.player.get_status(include_beat_map=False)
                     msg = f"data: {json.dumps(status)}\n\n".encode("utf-8")
                     self.wfile.write(msg)
                     self.wfile.flush()
