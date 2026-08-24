@@ -224,15 +224,24 @@ class MidiPlayer:
                 d[ev[0]] = ev[1:]
             return sorted([(k, *v) for k, v in d.items()], key=lambda x: x[0])
             
-        tempo_events = _dedup(tempo_events)
-        time_sig_events = _dedup(time_sig_events)
-        
-        if not tempo_events or tempo_events[0][0] > 0:
+        threshold_tick = max(24, tpb // 4)
+        if tempo_events:
+            if 0 < tempo_events[0][0] <= threshold_tick:
+                tempo_events[0] = (0, tempo_events[0][1])
+            elif tempo_events[0][0] > threshold_tick:
+                tempo_events.insert(0, (0, 500000))
+        else:
             tempo_events.insert(0, (0, 500000))
-        if not time_sig_events or time_sig_events[0][0] > 0:
-            time_sig_events.insert(0, (0, custom_num or 4, custom_den or 4))
-        elif custom_num and custom_den:
+
+        if custom_num and custom_den:
             time_sig_events = [(0, custom_num, custom_den)]
+        elif time_sig_events:
+            if 0 < time_sig_events[0][0] <= threshold_tick:
+                time_sig_events[0] = (0, time_sig_events[0][1], time_sig_events[0][2])
+            elif time_sig_events[0][0] > threshold_tick:
+                time_sig_events.insert(0, (0, 4, 4))
+        else:
+            time_sig_events.insert(0, (0, 4, 4))
             
         # Build tempo segments for tick -> seconds piecewise conversion
         tempo_segments = []
