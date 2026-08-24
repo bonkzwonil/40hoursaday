@@ -40,8 +40,13 @@
                     </button>
                 </div>
 
-                <!-- Mixer Button -->
-                <button id="btn-mixer" class="btn btn-icon btn-secondary" title="Audio Mixer" data-i18n-title="mixerTitle">
+                <!-- MIDI Mixer Button -->
+                <button id="btn-midi-mixer" class="btn btn-icon btn-secondary" title="MIDI Mixer & Channels" data-i18n-title="midiMixerTitle">
+                    🎛️
+                </button>
+
+                <!-- PulseAudio Mixer Button -->
+                <button id="btn-pulse-mixer" class="btn btn-icon btn-secondary" title="PulseAudio Mixer" data-i18n-title="pulseMixerTitle">
                     🎚️
                 </button>
 
@@ -92,58 +97,6 @@
                 <button id="btn-countin-toggle" class="btn btn-round-tool" title="Count-in Metronome" data-i18n-title="countinTitle">
                     ⏱ <span class="tool-label" data-i18n="countinLabel">Count-in</span>
                 </button>
-            </div>
-
-            <!-- Extra Settings Row (Transpose & Count-in) -->
-            <div class="extra-controls-row">
-                <div class="control-pill">
-                    <span class="pill-label" data-i18n="countinPillLabel">Count-in:</span>
-                    <div class="segmented-control" id="countin-segments">
-                        <button class="seg-btn active" data-countin="0" data-i18n="countinOff">Off</button>
-                        <button class="seg-btn" data-countin="1" data-i18n="countin1Bar">1 Bar</button>
-                        <button class="seg-btn" data-countin="2" data-i18n="countin2Bars">2 Bars</button>
-                    </div>
-                </div>
-
-                <div class="control-pill">
-                    <span class="pill-label" data-i18n="keyTranspose">Key:</span>
-                    <div class="transpose-controls">
-                        <button id="btn-trans-down" class="btn btn-sm btn-outline">♭ -1</button>
-                        <span id="transpose-val" class="transpose-badge">0</span>
-                        <button id="btn-trans-up" class="btn btn-sm btn-outline">♯ +1</button>
-                    </div>
-                </div>
-            </div>
-
-            <!-- MIDI Volume Section -->
-            <div class="volume-card">
-                <div class="volume-header">
-                    <div class="volume-title-group">
-                        <button id="btn-volume-mute" class="volume-icon-btn" title="Mute / Unmute" aria-label="Mute / Unmute">
-                            <span id="volume-icon">🔊</span>
-                        </button>
-                        <span class="volume-title" data-i18n="midiVolume">MIDI VOLUME</span>
-                    </div>
-                    <div class="volume-value-group">
-                        <span class="volume-percent" id="volume-percent-text">100%</span>
-                    </div>
-                </div>
-
-                <!-- Volume Slider -->
-                <div class="slider-row">
-                    <span class="slider-bound">0%</span>
-                    <input type="range" id="volume-slider" min="0" max="100" value="100" step="1" class="volume-range" aria-label="MIDI Volume Slider">
-                    <span class="slider-bound">100%</span>
-                </div>
-
-                <!-- Volume Presets -->
-                <div class="volume-presets">
-                    <button class="preset-pill vol-preset" data-volume="0.00">0%</button>
-                    <button class="preset-pill vol-preset" data-volume="0.25">25%</button>
-                    <button class="preset-pill vol-preset" data-volume="0.50">50%</button>
-                    <button class="preset-pill vol-preset" data-volume="0.75">75%</button>
-                    <button class="preset-pill vol-preset active" data-volume="1.00">100%</button>
-                </div>
             </div>
 
             <!-- Tempo / Speed Section -->
@@ -214,39 +167,111 @@
         </section>
     </div>
 
-    <!-- Audio Mixer Modal Drawer -->
+    <!-- Dual Mixer Modal Drawer (MIDI Mixer & PulseAudio) -->
     <div id="mixer-modal" class="modal-overlay" style="display: none;">
         <div class="modal-card mixer-card">
             <div class="modal-header">
-                <div class="modal-title-group">
-                    <span class="modal-icon">🎚️</span>
-                    <div>
-                        <h3 class="modal-title" data-i18n="mixerTitle">Audio Mixer</h3>
-                        <p class="modal-subtitle" data-i18n="mixerSubtitle">PulseAudio Volume Control</p>
-                    </div>
+                <!-- Modal Tabs Switcher -->
+                <div class="mixer-tabs-bar">
+                    <button class="mixer-tab-btn active" id="tab-btn-midi" data-i18n="midiMixerTab">🎛️ MIDI Mixer</button>
+                    <button class="mixer-tab-btn" id="tab-btn-pulse" data-i18n="pulseMixerTab">🎚️ Pulse Audio</button>
                 </div>
                 <button id="btn-close-mixer" class="btn btn-icon btn-sm btn-close" title="Close">✕</button>
             </div>
             
-            <div class="mixer-body" id="mixer-body">
-                <!-- Master / Sinks -->
-                <div class="mixer-section">
-                    <div class="mixer-section-header">
-                        <span class="mixer-section-title" data-i18n="mixerOutputs">OUTPUT (MASTER)</span>
+            <div class="mixer-body">
+                <!-- 1. MIDI Mixer Panel -->
+                <div id="mixer-panel-midi" class="mixer-panel">
+                    <!-- Master MIDI Volume -->
+                    <div class="volume-card">
+                        <div class="volume-header">
+                            <div class="volume-title-group">
+                                <button id="btn-volume-mute" class="volume-icon-btn" title="Mute / Unmute Master" aria-label="Mute Master">
+                                    <span id="volume-icon">🔊</span>
+                                </button>
+                                <span class="volume-title" data-i18n="midiMasterVolume">MIDI MASTER VOLUME</span>
+                            </div>
+                            <div class="volume-value-group">
+                                <span class="volume-percent" id="volume-percent-text">100%</span>
+                            </div>
+                        </div>
+
+                        <!-- Volume Slider -->
+                        <div class="slider-row">
+                            <span class="slider-bound">0%</span>
+                            <input type="range" id="volume-slider" min="0" max="100" value="100" step="1" class="volume-range" aria-label="MIDI Volume Slider">
+                            <span class="slider-bound">100%</span>
+                        </div>
+
+                        <!-- Volume Presets -->
+                        <div class="volume-presets">
+                            <button class="preset-pill vol-preset" data-volume="0.00">0%</button>
+                            <button class="preset-pill vol-preset" data-volume="0.25">25%</button>
+                            <button class="preset-pill vol-preset" data-volume="0.50">50%</button>
+                            <button class="preset-pill vol-preset" data-volume="0.75">75%</button>
+                            <button class="preset-pill vol-preset active" data-volume="1.00">100%</button>
+                        </div>
                     </div>
-                    <div id="mixer-sinks-list" class="mixer-list">
-                        <div class="mixer-loading" data-i18n="mixerLoading">Loading audio devices...</div>
+
+                    <!-- Track Pitch & Count-in Controls -->
+                    <div class="extra-controls-row">
+                        <div class="control-pill">
+                            <span class="pill-label" data-i18n="countinPillLabel">Count-in:</span>
+                            <div class="segmented-control" id="countin-segments">
+                                <button class="seg-btn active" data-countin="0" data-i18n="countinOff">Off</button>
+                                <button class="seg-btn" data-countin="1" data-i18n="countin1Bar">1 Bar</button>
+                                <button class="seg-btn" data-countin="2" data-i18n="countin2Bars">2 Bars</button>
+                            </div>
+                        </div>
+
+                        <div class="control-pill">
+                            <span class="pill-label" data-i18n="keyTranspose">Key:</span>
+                            <div class="transpose-controls">
+                                <button id="btn-trans-down" class="btn btn-sm btn-outline">♭ -1</button>
+                                <span id="transpose-val" class="transpose-badge">0</span>
+                                <button id="btn-trans-up" class="btn btn-sm btn-outline">♯ +1</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Channel Strips 1-10 Section -->
+                    <div class="mixer-section">
+                        <div class="mixer-section-header">
+                            <span class="mixer-section-title" data-i18n="midiChannelsMute">MIDI CHANNELS (CH 1–10)</span>
+                            <div class="mixer-section-actions">
+                                <button id="btn-reset-channels" class="btn-text-action" data-i18n="resetVolumes">Reset 100%</button>
+                                <button id="btn-unmute-all" class="btn-text-action" data-i18n="unmuteAll">Unmute All</button>
+                            </div>
+                        </div>
+
+                        <!-- 10 Channel Strips -->
+                        <div id="midi-channels-list" class="mixer-list">
+                            <!-- Populated dynamically / pre-rendered with channels 1 to 10 -->
+                        </div>
                     </div>
                 </div>
 
-                <!-- Streams / Apps -->
-                <div class="mixer-section">
-                    <div class="mixer-section-header">
-                        <span class="mixer-section-title" data-i18n="mixerStreams">APPLICATIONS & STREAMS</span>
-                        <span class="mixer-refresh-indicator" id="mixer-refresh-btn" title="Refresh">🔄</span>
+                <!-- 2. PulseAudio Mixer Panel -->
+                <div id="mixer-panel-pulse" class="mixer-panel" style="display: none;">
+                    <!-- Master / Sinks -->
+                    <div class="mixer-section">
+                        <div class="mixer-section-header">
+                            <span class="mixer-section-title" data-i18n="mixerOutputs">OUTPUT (MASTER)</span>
+                        </div>
+                        <div id="mixer-sinks-list" class="mixer-list">
+                            <div class="mixer-loading" data-i18n="mixerLoading">Loading audio devices...</div>
+                        </div>
                     </div>
-                    <div id="mixer-streams-list" class="mixer-list">
-                        <div class="mixer-loading" data-i18n="mixerLoading">Loading active streams...</div>
+
+                    <!-- Streams / Apps -->
+                    <div class="mixer-section">
+                        <div class="mixer-section-header">
+                            <span class="mixer-section-title" data-i18n="mixerStreams">APPLICATIONS & STREAMS</span>
+                            <span class="mixer-refresh-indicator" id="mixer-refresh-btn" title="Refresh">🔄</span>
+                        </div>
+                        <div id="mixer-streams-list" class="mixer-list">
+                            <div class="mixer-loading" data-i18n="mixerLoading">Loading active streams...</div>
+                        </div>
                     </div>
                 </div>
             </div>

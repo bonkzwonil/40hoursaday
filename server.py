@@ -258,6 +258,38 @@ class PracticePartnerHandler(SimpleHTTPRequestHandler):
             self._send_json({"success": True, "status": self.player.get_status()})
             return
 
+        if path == "/api/channel/volume" or path == "/api/channel_volume":
+            body = self._parse_json_body() or {}
+            channel = body.get("channel")
+            volume = body.get("volume")
+            if channel is not None and volume is not None:
+                ok = self.player.set_channel_volume(int(channel), float(volume))
+                self._send_json({"success": ok, "status": self.player.get_status()})
+            else:
+                self._send_error("Missing 'channel' or 'volume' parameter")
+            return
+
+        if path == "/api/channel/reset_volumes" or path == "/api/channel_reset_volumes":
+            ok = self.player.reset_channel_volumes()
+            self._send_json({"success": ok, "status": self.player.get_status()})
+            return
+
+        if path == "/api/channel/mute" or path == "/api/channel_mute":
+            body = self._parse_json_body() or {}
+            channel = body.get("channel")
+            mute = body.get("mute")
+            if channel is not None and mute is not None:
+                ok = self.player.set_channel_mute(int(channel), bool(mute))
+                self._send_json({"success": ok, "status": self.player.get_status()})
+            else:
+                self._send_error("Missing 'channel' or 'mute' parameter")
+            return
+
+        if path == "/api/channel/unmute_all" or path == "/api/channel_unmute_all":
+            ok = self.player.unmute_all_channels()
+            self._send_json({"success": ok, "status": self.player.get_status()})
+            return
+
         if path == "/api/panic":
             self.player.panic()
             self._send_json({"success": True, "message": "Panic / All notes reset sent"})

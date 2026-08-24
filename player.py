@@ -51,6 +51,8 @@ class MidiPlayer:
         self.loop: bool = False
         self.transpose: int = 0  # Semitone shift (-12 to +12)
         self.count_in_bars: int = 0  # 0 = off, 1 = 1 bar, 2 = 2 bars
+        self.muted_channels: set = set()  # Set of 0-indexed muted channels (0..15)
+        self.channel_volumes: Dict[int, float] = {ch: 1.0 for ch in range(16)}  # 0-indexed channel volumes (0.0 to 1.0)
 
         # Real-time synchronization
         self._clock_base_time: float = 0.0
@@ -343,6 +345,74 @@ class MidiPlayer:
         with self.lock:
             self.count_in_bars = max(0, min(4, int(bars)))
 
+    def set_channel_volume(self, channel: int, volume: float) -> bool:
+        """Sets volume scaling (0.0 to 1.0) for a MIDI channel (1-16 or 0-15)."""
+        try:
+            ch_num = int(channel)
+            vol = float(volume)
+        except (TypeError, ValueError):
+            return False
+
+        if 1 <= ch_num <= 16:
+            ch_idx = ch_num - 1
+        elif ch_num == 0:
+            ch_idx = 0
+        else:
+            return False
+
+        if vol > 1.0:
+            vol = vol / 100.0
+        vol = max(0.0, min(1.0, vol))
+
+        with self.lock:
+            self.channel_volumes[ch_idx] = vol
+        return True
+
+    def reset_channel_volumes(self) -> bool:
+        """Resets all channel volumes to 1.0 (100%)."""
+        with self.lock:
+            for ch in range(16):
+                self.channel_volumes[ch] = 1.0
+        return True
+
+    def set_channel_mute(self, channel: int, mute: bool) -> bool:
+        """Sets mute state for a MIDI channel (accepts 1-based 1..16 or 0-based 0..15)."""
+        try:
+            ch_num = int(channel)
+        except (TypeError, ValueError):
+            return False
+
+        if 1 <= ch_num <= 16:
+            ch_idx = ch_num - 1
+        elif ch_num == 0:
+            ch_idx = 0
+        else:
+            return False
+
+        with self.lock:
+            if mute:
+                self.muted_channels.add(ch_idx)
+            else:
+                self.muted_channels.discard(ch_idx)
+
+        # If muting during active playback, send note-off/panic to that specific channel
+        if mute and self.target_port_name:
+            try:
+                with mido.open_output(self.target_port_name) as port:
+                    port.send(mido.Message('control_change', channel=ch_idx, control=123, value=0))
+                    port.send(mido.Message('control_change', channel=ch_idx, control=120, value=0))
+                    port.send(mido.Message('control_change', channel=ch_idx, control=64, value=0))
+            except Exception:
+                pass
+
+        return True
+
+    def unmute_all_channels(self) -> bool:
+        """Unmutes all MIDI channels."""
+        with self.lock:
+            self.muted_channels.clear()
+        return True
+
     def panic(self):
         """Sends all notes off, all sound off, and sustain off on all channels."""
         if not self.target_port_name:
@@ -380,6 +450,8 @@ class MidiPlayer:
                 "loop": self.loop,
                 "transpose": self.transpose,
                 "count_in_bars": self.count_in_bars,
+                "muted_channels": [ch + 1 for ch in sorted(self.muted_channels)],
+                "channel_volumes": {ch + 1: int(round(self.channel_volumes.get(ch, 1.0) * 100)) for ch in range(10)},
                 "port": self.target_port_name,
                 "available_ports": available,
                 "allow_program_change": self.is_program_change_allowed_for_port(self.target_port_name),
@@ -543,17 +615,28 @@ class MidiPlayer:
                         break
 
                     with self.lock:
-                        msg_to_send = orig_msg.copy()
-                        if self.transpose != 0 and msg_to_send.type in ('note_on', 'note_off', 'polytouch'):
-                            if getattr(msg_to_send, 'channel', 0) != 9:
-                                new_note = max(0, min(127, msg_to_send.note + self.transpose))
-                                msg_to_send.note = new_note
-                        if msg_to_send.type == 'note_on' and getattr(msg_to_send, 'velocity', 0) > 0:
-                            if self.volume <= 0.0:
-                                msg_to_send.velocity = 0
-                            else:
-                                msg_to_send.velocity = max(1, min(127, int(round(msg_to_send.velocity * self.volume))))
+                        msg_ch = getattr(orig_msg, 'channel', None)
+                        is_muted = (msg_ch is not None and msg_ch in self.muted_channels)
                         self.position = event_t
+                        if not is_muted:
+                            msg_to_send = orig_msg.copy()
+                            if self.transpose != 0 and msg_to_send.type in ('note_on', 'note_off', 'polytouch'):
+                                if getattr(msg_to_send, 'channel', 0) != 9:
+                                    new_note = max(0, min(127, msg_to_send.note + self.transpose))
+                                    msg_to_send.note = new_note
+                            if msg_to_send.type == 'note_on' and getattr(msg_to_send, 'velocity', 0) > 0:
+                                ch_vol = self.channel_volumes.get(msg_ch, 1.0) if msg_ch is not None else 1.0
+                                eff_vol = self.volume * ch_vol
+                                if eff_vol <= 0.0:
+                                    msg_to_send.velocity = 0
+                                else:
+                                    msg_to_send.velocity = max(1, min(127, int(round(msg_to_send.velocity * eff_vol))))
+                        else:
+                            msg_to_send = None
+
+                    if msg_to_send is None:
+                        event_idx += 1
+                        continue
 
                     # Per-device Program Change & Bank Select filter
                     if msg_to_send.type == 'program_change' or (msg_to_send.type == 'control_change' and getattr(msg_to_send, 'control', -1) in (0, 32)):

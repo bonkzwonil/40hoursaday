@@ -486,6 +486,118 @@ body {
     font-size: 0.72rem;
 }
 
+/* MIDI Channel Mute Card */
+.channels-card {
+    background: var(--bg-input);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: 10px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.channels-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.channels-title-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.channels-icon {
+    font-size: 0.85rem;
+    opacity: 0.8;
+}
+
+.channels-title {
+    font-size: 0.75rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+}
+
+.btn-unmute-all {
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-full);
+    color: var(--accent);
+    font-size: 0.68rem;
+    font-weight: 700;
+    padding: 2px 8px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.btn-unmute-all:hover {
+    background: rgba(6, 182, 212, 0.15);
+    border-color: var(--accent);
+    color: #fff;
+    box-shadow: 0 0 8px var(--accent-glow);
+}
+
+.btn-unmute-all:active {
+    transform: scale(0.95);
+}
+
+.channels-grid {
+    display: grid;
+    grid-template-columns: repeat(10, 1fr);
+    gap: 4px;
+}
+
+@media (max-width: 460px) {
+    .channels-grid {
+        grid-template-columns: repeat(5, 1fr);
+        gap: 6px;
+    }
+}
+
+.btn-channel-mute {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-card-sub);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-main);
+    font-size: 0.78rem;
+    font-weight: 700;
+    padding: 6px 0;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    user-select: none;
+    position: relative;
+}
+
+.btn-channel-mute:hover {
+    border-color: var(--primary);
+    background: rgba(139, 92, 246, 0.15);
+    color: #fff;
+}
+
+.btn-channel-mute:active {
+    transform: scale(0.93);
+}
+
+.btn-channel-mute.muted {
+    background: rgba(239, 68, 68, 0.22);
+    border-color: var(--danger);
+    color: #fca5a5;
+    box-shadow: 0 0 8px rgba(239, 68, 68, 0.3);
+    text-decoration: line-through;
+}
+
+.btn-channel-mute.muted:hover {
+    background: rgba(239, 68, 68, 0.35);
+    border-color: #f87171;
+    color: #fff;
+}
+
 /* Volume Card */
 .volume-card {
     background: var(--bg-input);
@@ -989,9 +1101,44 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 18px 20px;
+    padding: 14px 18px;
     border-bottom: 1px solid var(--border-subtle);
     background: rgba(30, 41, 59, 0.4);
+}
+
+/* Dual Mixer Tabs Bar */
+.mixer-tabs-bar {
+    display: flex;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-full);
+    padding: 3px;
+    gap: 4px;
+}
+
+.mixer-tab-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 0.82rem;
+    font-weight: 700;
+    padding: 6px 14px;
+    border-radius: var(--radius-full);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.mixer-tab-btn:hover {
+    color: var(--text-main);
+}
+
+.mixer-tab-btn.active {
+    background: var(--primary);
+    color: #fff;
+    box-shadow: 0 0 12px var(--primary-glow);
 }
 
 .modal-title-group {
@@ -1039,11 +1186,17 @@ body {
 }
 
 .mixer-body {
-    padding: 20px;
+    padding: 16px;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    gap: 16px;
+}
+
+.mixer-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
 }
 
 .mixer-section {
@@ -1056,6 +1209,61 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
+}
+
+.mixer-section-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.btn-text-action {
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-full);
+    color: var(--accent);
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 3px 10px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.btn-text-action:hover {
+    background: rgba(6, 182, 212, 0.15);
+    border-color: var(--accent);
+    color: #fff;
+    box-shadow: 0 0 8px var(--accent-glow);
+}
+
+.btn-text-action:active {
+    transform: scale(0.95);
+}
+
+/* Specific styling for MIDI channels in mixer */
+.midi-channel-card {
+    background: var(--bg-card-sub);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 10px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    transition: all 0.15s ease;
+}
+
+.midi-channel-card.muted {
+    opacity: 0.6;
+    border-color: rgba(239, 68, 68, 0.4);
+    background: rgba(239, 68, 68, 0.06);
+}
+
+.midi-channel-card:hover {
+    border-color: var(--primary);
+}
+
+.midi-channel-card.drum {
+    border-left: 4px solid var(--warning);
 }
 
 .mixer-section-title {

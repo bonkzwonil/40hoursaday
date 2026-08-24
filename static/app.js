@@ -1,4 +1,4 @@
-// 40hoursaday - Web Client Logic with Multilingual (EN/DE) Support
+// 40hoursaday - Web Client Logic with Multilingual (EN/DE) Support & Dual Mixer (MIDI + PulseAudio)
 (function() {
     'use strict';
 
@@ -27,7 +27,6 @@
             countin1Bar: "1 Bar",
             countin2Bars: "2 Bars",
             keyTranspose: "Key:",
-            midiVolume: "MIDI VOLUME",
             practiceTempo: "PRACTICE TEMPO",
             piecesTitle: "Practice Pieces",
             piecesCount: "{n} Pieces",
@@ -46,11 +45,22 @@
             toastPanic: "🚨 MIDI Reset sent!",
             toastPort: "MIDI Port: {port}",
             toastVolume: "MIDI Volume: {vol}%",
+            toastChannelVolume: "Ch {ch} Volume: {vol}%",
+            toastChannelMuted: "Channel {ch} muted 🔇",
+            toastChannelUnmuted: "Channel {ch} unmuted 🔊",
+            toastAllChannelsUnmuted: "All channels unmuted 🔊",
+            toastChannelsReset: "All channels reset to 100% 🎛️",
             toastUploading: "Uploading {file}...",
             toastUploadSuccess: "✅ \"{title}\" added!",
             toastUploadError: "Upload failed: {error}",
-            mixerTitle: "Audio Mixer",
-            mixerSubtitle: "PulseAudio Volume Control",
+            midiMixerTitle: "MIDI Mixer & Channels",
+            pulseMixerTitle: "PulseAudio Mixer",
+            midiMixerTab: "🎛️ MIDI Mixer",
+            pulseMixerTab: "🎚️ Pulse Audio",
+            midiMasterVolume: "MIDI MASTER VOLUME",
+            midiChannelsMute: "MIDI CHANNELS (CH 1–10)",
+            resetVolumes: "Reset 100%",
+            unmuteAll: "Unmute All",
             mixerOutputs: "OUTPUT (MASTER)",
             mixerStreams: "APPLICATIONS & STREAMS",
             mixerLoading: "Loading audio streams...",
@@ -81,7 +91,6 @@
             countin1Bar: "1 Takt",
             countin2Bars: "2 Takte",
             keyTranspose: "Tonart:",
-            midiVolume: "MIDI LAUTSTÄRKE",
             practiceTempo: "ÜBUNGSTEMPO",
             piecesTitle: "Übungsstücke",
             piecesCount: "{n} Stücke",
@@ -100,11 +109,22 @@
             toastPanic: "🚨 MIDI Reset gesendet!",
             toastPort: "MIDI Port: {port}",
             toastVolume: "MIDI-Lautstärke: {vol}%",
+            toastChannelVolume: "Kanal {ch} Lautstärke: {vol}%",
+            toastChannelMuted: "Kanal {ch} stummgeschaltet 🔇",
+            toastChannelUnmuted: "Kanal {ch} aktiviert 🔊",
+            toastAllChannelsUnmuted: "Alle Kanäle aktiviert 🔊",
+            toastChannelsReset: "Alle Kanäle auf 100% zurückgesetzt 🎛️",
             toastUploading: "Lade {file} hoch...",
             toastUploadSuccess: "✅ \"{title}\" hinzugefügt!",
             toastUploadError: "Upload-Fehler: {error}",
-            mixerTitle: "Audio-Mischpult",
-            mixerSubtitle: "PulseAudio Lautstärkeregelung",
+            midiMixerTitle: "MIDI-Mischpult & Kanäle",
+            pulseMixerTitle: "PulseAudio-Mischpult",
+            midiMixerTab: "🎛️ MIDI-Mixer",
+            pulseMixerTab: "🎚️ PulseAudio",
+            midiMasterVolume: "MIDI MASTER-LAUTSTÄRKE",
+            midiChannelsMute: "MIDI-KANÄLE (CH 1–10)",
+            resetVolumes: "Auf 100% zurücksetzen",
+            unmuteAll: "Alle aktivieren",
             mixerOutputs: "AUSGANG (MASTER)",
             mixerStreams: "ANWENDUNGEN & AUDIO-STREAMS",
             mixerLoading: "Lade Audio-Streams...",
@@ -142,6 +162,8 @@
             loop: false,
             transpose: 0,
             count_in_bars: 0,
+            muted_channels: [],
+            channel_volumes: {},
             port: null,
             available_ports: [],
             bpm: 120,
@@ -161,6 +183,8 @@
         portIndicator: document.getElementById('port-indicator'),
         btnPcToggle: document.getElementById('btn-pc-toggle'),
         btnPanic: document.getElementById('btn-panic'),
+        btnMidiMixer: document.getElementById('btn-midi-mixer'),
+        btnPulseMixer: document.getElementById('btn-pulse-mixer'),
         
         currentTrackTitle: document.getElementById('current-track-title'),
         trackMeter: document.getElementById('track-meter'),
@@ -205,9 +229,20 @@
         fileUploadInput: document.getElementById('file-upload-input'),
         toast: document.getElementById('toast'),
         
-        btnMixer: document.getElementById('btn-mixer'),
+        // Modal & Dual Mixer
         mixerModal: document.getElementById('mixer-modal'),
         btnCloseMixer: document.getElementById('btn-close-mixer'),
+        tabBtnMidi: document.getElementById('tab-btn-midi'),
+        tabBtnPulse: document.getElementById('tab-btn-pulse'),
+        mixerPanelMidi: document.getElementById('mixer-panel-midi'),
+        mixerPanelPulse: document.getElementById('mixer-panel-pulse'),
+
+        // MIDI Mixer
+        midiChannelsList: document.getElementById('midi-channels-list'),
+        btnResetChannels: document.getElementById('btn-reset-channels'),
+        btnUnmuteAll: document.getElementById('btn-unmute-all'),
+
+        // PulseAudio Mixer
         mixerRefreshBtn: document.getElementById('mixer-refresh-btn'),
         mixerSinksList: document.getElementById('mixer-sinks-list'),
         mixerStreamsList: document.getElementById('mixer-streams-list')
@@ -365,21 +400,25 @@
             }
         }
 
-        // Count-in Segments
-        const countInButtons = elements.countinSegments.querySelectorAll('.seg-btn');
-        countInButtons.forEach(btn => {
-            const bars = parseInt(btn.dataset.countin, 10);
-            if (bars === (s.count_in_bars || 0)) {
-                btn.classList.add('active');
-            } else {
-                btn.classList.remove('active');
-            }
-        });
+        // Count-in Segments (in modal)
+        if (elements.countinSegments) {
+            const countInButtons = elements.countinSegments.querySelectorAll('.seg-btn');
+            countInButtons.forEach(btn => {
+                const bars = parseInt(btn.dataset.countin, 10);
+                if (bars === (s.count_in_bars || 0)) {
+                    btn.classList.add('active');
+                } else {
+                    btn.classList.remove('active');
+                }
+            });
+        }
 
         // Transpose
-        elements.transposeBadge.textContent = s.transpose > 0 ? `+${s.transpose}` : `${s.transpose || 0}`;
+        if (elements.transposeBadge) {
+            elements.transposeBadge.textContent = s.transpose > 0 ? `+${s.transpose}` : `${s.transpose || 0}`;
+        }
 
-        // Volume
+        // Master Volume
         const volPct = Math.round((s.volume !== undefined ? s.volume : 1.0) * 100);
         if (elements.volumePercentText) {
             elements.volumePercentText.textContent = `${volPct}%`;
@@ -403,6 +442,9 @@
                 }
             });
         }
+
+        // MIDI Channels (1-10) in MIDI Mixer
+        updateMidiChannelsUI();
 
         // Tempo
         const pct = Math.round((s.speed || 1.0) * 100);
@@ -460,7 +502,7 @@
         found = options.find(o => o.value.toLowerCase().trim() === tLower);
         if (found) return found.value;
 
-        // 3. Option contains target (e.g. "VirMIDI 2-0" in "Virtual Raw MIDI 2-0:VirMIDI 2-0 24:0")
+        // 3. Option contains target
         found = options.find(o => o.value.toLowerCase().includes(tLower));
         if (found) return found.value;
 
@@ -484,7 +526,6 @@
             }
         });
 
-        // Check if options actually changed to avoid blowing away user selection / DOM state
         const currentOptions = Array.from(elements.portSelect.options).map(o => o.value).filter(v => v !== '');
         const optionsSame = uniquePorts.length === currentOptions.length && 
                             uniquePorts.every((p, idx) => p === currentOptions[idx]);
@@ -559,7 +600,6 @@
             </div>
         `).join('');
 
-        // Attach item click listeners
         elements.trackList.querySelectorAll('.track-item').forEach(el => {
             el.addEventListener('click', () => {
                 const fp = el.dataset.filepath;
@@ -655,7 +695,7 @@
         }, 60);
     }
 
-    // Event Listeners Setup
+    // Setup Events
     function setupEvents() {
         // Language Buttons
         elements.langButtons.forEach(btn => {
@@ -689,28 +729,34 @@
         }
 
         // Count-in Segments
-        elements.countinSegments.querySelectorAll('.seg-btn').forEach(btn => {
-            btn.addEventListener('click', async () => {
-                const bars = parseInt(btn.dataset.countin, 10);
-                const res = await apiPost('count_in', { count_in_bars: bars });
-                if (res.status) updateUI(res.status);
-                const plural = currentLang === 'de' ? (bars > 1 ? 'e' : '') : (bars > 1 ? 's' : '');
-                showToast(bars > 0 ? t('toastCountinSet', { bars, plural }) : t('toastCountinOff'));
+        if (elements.countinSegments) {
+            elements.countinSegments.querySelectorAll('.seg-btn').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    const bars = parseInt(btn.dataset.countin, 10);
+                    const res = await apiPost('count_in', { count_in_bars: bars });
+                    if (res.status) updateUI(res.status);
+                    const plural = currentLang === 'de' ? (bars > 1 ? 'e' : '') : (bars > 1 ? 's' : '');
+                    showToast(bars > 0 ? t('toastCountinSet', { bars, plural }) : t('toastCountinOff'));
+                });
             });
-        });
+        }
 
         // Transpose Controls
-        elements.btnTransDown.addEventListener('click', async () => {
-            const newTrans = (state.status.transpose || 0) - 1;
-            const res = await apiPost('transpose', { transpose: newTrans });
-            if (res.status) updateUI(res.status);
-        });
+        if (elements.btnTransDown) {
+            elements.btnTransDown.addEventListener('click', async () => {
+                const newTrans = (state.status.transpose || 0) - 1;
+                const res = await apiPost('transpose', { transpose: newTrans });
+                if (res.status) updateUI(res.status);
+            });
+        }
 
-        elements.btnTransUp.addEventListener('click', async () => {
-            const newTrans = (state.status.transpose || 0) + 1;
-            const res = await apiPost('transpose', { transpose: newTrans });
-            if (res.status) updateUI(res.status);
-        });
+        if (elements.btnTransUp) {
+            elements.btnTransUp.addEventListener('click', async () => {
+                const newTrans = (state.status.transpose || 0) + 1;
+                const res = await apiPost('transpose', { transpose: newTrans });
+                if (res.status) updateUI(res.status);
+            });
+        }
 
         // MIDI Panic
         elements.btnPanic.addEventListener('click', async () => {
@@ -749,14 +795,14 @@
             });
         }
 
-        // Volume Slider
+        // Master Volume Slider
         if (elements.volumeSlider) {
             elements.volumeSlider.addEventListener('input', (e) => {
                 setVolumePercent(parseFloat(e.target.value));
             });
         }
 
-        // Volume Mute Button
+        // Master Volume Mute Button
         if (elements.btnVolumeMute) {
             elements.btnVolumeMute.addEventListener('click', () => {
                 if ((state.status.volume || 1.0) > 0) {
@@ -768,13 +814,36 @@
             });
         }
 
-        // Volume Presets
+        // Master Volume Presets
         if (elements.volumePresetPills) {
             elements.volumePresetPills.forEach(pill => {
                 pill.addEventListener('click', () => {
                     const vol = parseFloat(pill.dataset.volume);
                     setVolumePercent(vol * 100);
                 });
+            });
+        }
+
+        // MIDI Mixer Action Buttons
+        if (elements.btnResetChannels) {
+            elements.btnResetChannels.addEventListener('click', async () => {
+                const newVols = {};
+                for (let ch = 1; ch <= 10; ch++) newVols[ch] = 100;
+                state.status.channel_volumes = newVols;
+                updateMidiChannelsUI();
+                const res = await apiPost('channel/reset_volumes');
+                if (res && res.status) updateUI(res.status);
+                showToast(t('toastChannelsReset'));
+            });
+        }
+
+        if (elements.btnUnmuteAll) {
+            elements.btnUnmuteAll.addEventListener('click', async () => {
+                state.status.muted_channels = [];
+                updateMidiChannelsUI();
+                const res = await apiPost('channel/unmute_all');
+                if (res && res.status) updateUI(res.status);
+                showToast(t('toastAllChannelsUnmuted'));
             });
         }
 
@@ -861,15 +930,33 @@
             elements.fileUploadInput.value = '';
         });
 
-        // Audio Mixer Modal Events
-        if (elements.btnMixer) {
-            elements.btnMixer.addEventListener('click', () => {
-                if (isMixerOpen) {
+        // Dual Mixer Modal Events
+        if (elements.btnMidiMixer) {
+            elements.btnMidiMixer.addEventListener('click', () => {
+                if (isMixerOpen && activeMixerTab === 'midi') {
                     closeMixer();
                 } else {
-                    openMixer();
+                    openMixer('midi');
                 }
             });
+        }
+
+        if (elements.btnPulseMixer) {
+            elements.btnPulseMixer.addEventListener('click', () => {
+                if (isMixerOpen && activeMixerTab === 'pulse') {
+                    closeMixer();
+                } else {
+                    openMixer('pulse');
+                }
+            });
+        }
+
+        if (elements.tabBtnMidi) {
+            elements.tabBtnMidi.addEventListener('click', () => switchMixerTab('midi'));
+        }
+
+        if (elements.tabBtnPulse) {
+            elements.tabBtnPulse.addEventListener('click', () => switchMixerTab('pulse'));
         }
 
         if (elements.btnCloseMixer) {
@@ -897,11 +984,59 @@
         });
     }
 
-    // Mixer Controller
+    // Dual Mixer Controller (MIDI & PulseAudio)
     let isMixerOpen = false;
+    let activeMixerTab = 'midi';
     let mixerPollTimer = null;
     let isDraggingMixer = false;
+    let isDraggingMidiMixer = false;
     let mixerDebounceTimers = {};
+    let midiDebounceTimers = {};
+
+    function switchMixerTab(tab) {
+        activeMixerTab = tab;
+        if (tab === 'midi') {
+            if (elements.tabBtnMidi) elements.tabBtnMidi.classList.add('active');
+            if (elements.tabBtnPulse) elements.tabBtnPulse.classList.remove('active');
+            if (elements.mixerPanelMidi) elements.mixerPanelMidi.style.display = 'flex';
+            if (elements.mixerPanelPulse) elements.mixerPanelPulse.style.display = 'none';
+        } else {
+            if (elements.tabBtnPulse) elements.tabBtnPulse.classList.add('active');
+            if (elements.tabBtnMidi) elements.tabBtnMidi.classList.remove('active');
+            if (elements.mixerPanelPulse) elements.mixerPanelPulse.style.display = 'flex';
+            if (elements.mixerPanelMidi) elements.mixerPanelMidi.style.display = 'none';
+            loadMixer();
+        }
+    }
+
+    function openMixer(tab = 'midi') {
+        isMixerOpen = true;
+        switchMixerTab(tab);
+        elements.mixerModal.style.display = 'flex';
+        void elements.mixerModal.offsetWidth;
+        elements.mixerModal.classList.add('open');
+        if (tab === 'pulse') loadMixer();
+        if (mixerPollTimer) clearInterval(mixerPollTimer);
+        mixerPollTimer = setInterval(() => {
+            if (isMixerOpen && activeMixerTab === 'pulse' && !isDraggingMixer) {
+                loadMixer();
+            }
+        }, 1500);
+    }
+
+    function closeMixer() {
+        isMixerOpen = false;
+        elements.mixerModal.classList.remove('open');
+        if (mixerPollTimer) {
+            clearInterval(mixerPollTimer);
+            mixerPollTimer = null;
+        }
+        setTimeout(() => {
+            if (!isMixerOpen) {
+                elements.mixerModal.style.display = 'none';
+            }
+        }, 200);
+    }
 
     function escapeHtml(str) {
         if (!str) return '';
@@ -918,11 +1053,154 @@
         mixerDebounceTimers[key] = setTimeout(fn, delay);
     }
 
+    // MIDI Channels Strip Rendering
+    const midiChannelDescriptions = {
+        1: "Lead / Melody (Ch 1)",
+        2: "Accompaniment (Ch 2)",
+        3: "Bass / Harmony (Ch 3)",
+        4: "Track 4",
+        5: "Track 5",
+        6: "Track 6",
+        7: "Track 7",
+        8: "Track 8",
+        9: "Track 9",
+        10: "Percussion / Drums 🥁 (Ch 10)"
+    };
+
+    function renderMidiChannels() {
+        if (!elements.midiChannelsList) return;
+        const muted = state.status.muted_channels || [];
+        const volumes = state.status.channel_volumes || {};
+
+        let html = '';
+        for (let ch = 1; ch <= 10; ch++) {
+            const isMuted = muted.includes(ch);
+            const vol = (volumes[ch] !== undefined) ? volumes[ch] : 100;
+            const icon = (ch === 10) ? '🥁' : '🎹';
+            const sub = midiChannelDescriptions[ch] || `MIDI Channel ${ch}`;
+
+            html += `
+                <div class="midi-channel-card ${isMuted ? 'muted' : ''} ${ch === 10 ? 'drum' : ''}" id="midi-ch-card-${ch}">
+                    <div class="mixer-channel-top">
+                        <div class="mixer-channel-meta">
+                            <span class="mixer-channel-icon">${icon}</span>
+                            <div class="mixer-channel-names">
+                                <span class="mixer-channel-title">Channel ${ch}</span>
+                                <span class="mixer-channel-sub">${escapeHtml(sub)}</span>
+                            </div>
+                        </div>
+                        <div class="mixer-channel-actions">
+                            <span class="mixer-vol-badge" id="midi-ch-val-${ch}">${vol}%</span>
+                            <button class="btn-mute ${isMuted ? 'is-muted' : ''}" data-midi-ch-mute="${ch}" data-muted="${isMuted}" title="${isMuted ? t('mixerUnmute') : t('mixerMute')}">
+                                ${isMuted ? '🔇' : '🔊'}
+                            </button>
+                        </div>
+                    </div>
+                    <div class="mixer-slider-row">
+                        <input type="range" class="mixer-slider" min="0" max="100" value="${vol}" data-midi-ch-slider="${ch}">
+                    </div>
+                </div>
+            `;
+        }
+        elements.midiChannelsList.innerHTML = html;
+        bindMidiChannelEvents();
+    }
+
+    function updateMidiChannelsUI() {
+        const muted = state.status.muted_channels || [];
+        const volumes = state.status.channel_volumes || {};
+
+        for (let ch = 1; ch <= 10; ch++) {
+            const card = document.getElementById(`midi-ch-card-${ch}`);
+            const valBadge = document.getElementById(`midi-ch-val-${ch}`);
+            const slider = elements.midiChannelsList ? elements.midiChannelsList.querySelector(`[data-midi-ch-slider="${ch}"]`) : null;
+            const muteBtn = elements.midiChannelsList ? elements.midiChannelsList.querySelector(`[data-midi-ch-mute="${ch}"]`) : null;
+
+            const isMuted = muted.includes(ch);
+            const vol = (volumes[ch] !== undefined) ? volumes[ch] : 100;
+
+            if (card) {
+                if (isMuted) card.classList.add('muted');
+                else card.classList.remove('muted');
+            }
+            if (muteBtn) {
+                muteBtn.setAttribute('data-muted', isMuted);
+                muteBtn.innerHTML = isMuted ? '🔇' : '🔊';
+                if (isMuted) muteBtn.classList.add('is-muted');
+                else muteBtn.classList.remove('is-muted');
+                muteBtn.title = isMuted ? t('mixerUnmute') : t('mixerMute');
+            }
+            if (valBadge) {
+                valBadge.textContent = `${vol}%`;
+            }
+            if (slider && !isDraggingMidiMixer && document.activeElement !== slider) {
+                slider.value = vol;
+            }
+        }
+    }
+
+    function bindMidiChannelEvents() {
+        if (!elements.midiChannelsList) return;
+
+        // Channel sliders
+        elements.midiChannelsList.querySelectorAll('[data-midi-ch-slider]').forEach(slider => {
+            const ch = parseInt(slider.getAttribute('data-midi-ch-slider'), 10);
+            const valBadge = document.getElementById(`midi-ch-val-${ch}`);
+
+            const onInput = (e) => {
+                isDraggingMidiMixer = true;
+                const vol = parseInt(e.target.value, 10);
+                if (valBadge) valBadge.textContent = `${vol}%`;
+                if (!state.status.channel_volumes) state.status.channel_volumes = {};
+                state.status.channel_volumes[ch] = vol;
+
+                clearTimeout(midiDebounceTimers[`ch_${ch}`]);
+                midiDebounceTimers[`ch_${ch}`] = setTimeout(() => {
+                    apiPost('channel/volume', { channel: ch, volume: vol });
+                }, 40);
+            };
+
+            const onChange = () => {
+                isDraggingMidiMixer = false;
+            };
+
+            slider.addEventListener('input', onInput);
+            slider.addEventListener('change', onChange);
+            slider.addEventListener('touchend', onChange);
+            slider.addEventListener('mouseup', onChange);
+        });
+
+        // Channel mute buttons
+        elements.midiChannelsList.querySelectorAll('[data-midi-ch-mute]').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const ch = parseInt(btn.getAttribute('data-midi-ch-mute'), 10);
+                const isCurrentlyMuted = btn.getAttribute('data-muted') === 'true';
+                const newMuteState = !isCurrentlyMuted;
+
+                // Optimistic update
+                if (newMuteState) {
+                    if (!state.status.muted_channels) state.status.muted_channels = [];
+                    if (!state.status.muted_channels.includes(ch)) state.status.muted_channels.push(ch);
+                } else {
+                    state.status.muted_channels = (state.status.muted_channels || []).filter(c => c !== ch);
+                }
+                updateMidiChannelsUI();
+
+                const res = await apiPost('channel/mute', { channel: ch, mute: newMuteState });
+                if (res && res.status) {
+                    updateUI(res.status);
+                }
+                showToast(newMuteState ? t('toastChannelMuted', { ch }) : t('toastChannelUnmuted', { ch }));
+            });
+        });
+    }
+
+    // PulseAudio Streams & Sinks
     async function loadMixer() {
         try {
             const data = await apiGet('mixer');
-            if (data && isMixerOpen && !isDraggingMixer) {
-                renderMixer(data);
+            if (data && isMixerOpen && activeMixerTab === 'pulse' && !isDraggingMixer) {
+                renderPulseMixer(data);
             }
         } catch (err) {
             console.error("Failed to load mixer:", err);
@@ -945,7 +1223,7 @@
         return '';
     }
 
-    function renderMixer(data) {
+    function renderPulseMixer(data) {
         const sinks = data.sinks || [];
         const streams = data.streams || [];
 
@@ -1009,10 +1287,10 @@
             }).join('');
         }
 
-        bindMixerCardEvents();
+        bindPulseMixerEvents();
     }
 
-    function bindMixerCardEvents() {
+    function bindPulseMixerEvents() {
         // Sink sliders
         elements.mixerSinksList.querySelectorAll('[data-sink-slider]').forEach(slider => {
             const sinkId = parseInt(slider.getAttribute('data-sink-slider'), 10);
@@ -1043,7 +1321,7 @@
                 const sinkId = parseInt(btn.getAttribute('data-sink-mute'), 10);
                 const isCurrentlyMuted = btn.getAttribute('data-muted') === 'true';
                 const res = await apiPost('mixer/sink/mute', { id: sinkId, mute: !isCurrentlyMuted });
-                if (res && res.status) renderMixer(res.status);
+                if (res && res.status) renderPulseMixer(res.status);
             });
         });
 
@@ -1077,37 +1355,9 @@
                 const streamId = parseInt(btn.getAttribute('data-stream-mute'), 10);
                 const isCurrentlyMuted = btn.getAttribute('data-muted') === 'true';
                 const res = await apiPost('mixer/stream/mute', { id: streamId, mute: !isCurrentlyMuted });
-                if (res && res.status) renderMixer(res.status);
+                if (res && res.status) renderPulseMixer(res.status);
             });
         });
-    }
-
-    function openMixer() {
-        isMixerOpen = true;
-        elements.mixerModal.style.display = 'flex';
-        void elements.mixerModal.offsetWidth;
-        elements.mixerModal.classList.add('open');
-        loadMixer();
-        if (mixerPollTimer) clearInterval(mixerPollTimer);
-        mixerPollTimer = setInterval(() => {
-            if (isMixerOpen && !isDraggingMixer) {
-                loadMixer();
-            }
-        }, 1500);
-    }
-
-    function closeMixer() {
-        isMixerOpen = false;
-        elements.mixerModal.classList.remove('open');
-        if (mixerPollTimer) {
-            clearInterval(mixerPollTimer);
-            mixerPollTimer = null;
-        }
-        setTimeout(() => {
-            if (!isMixerOpen) {
-                elements.mixerModal.style.display = 'none';
-            }
-        }, 200);
     }
 
     // Real-time Event Stream (SSE)
@@ -1138,6 +1388,7 @@
 
     // Init
     async function init() {
+        renderMidiChannels();
         setupEvents();
         applyLanguage(currentLang);
 
