@@ -404,6 +404,11 @@ def run_batch(args):
     os.makedirs(args.out_dir, exist_ok=True)
     jobs = [(stem, scores[stem], p) for stem in sorted(scores)
             for p in perfs.get(stem, [])]
+    if not jobs:
+        raise SystemExit(
+            f"no rendered performances found in {', '.join(args.midi_dir)}.\n"
+            f"Point --midi-dir at the directory holding the "
+            f"Partituren_<score>_by_isgn_<style>.mid files.")
     unmatched = [s for s in sorted(scores) if not perfs.get(s)]
 
     print("=" * 96)
@@ -498,7 +503,8 @@ def main():
                     help='treat `score` as a directory and repair every rendering '
                          'found in --midi-dir that belongs to a score in it')
     ap.add_argument('--midi-dir', action='append', default=None,
-                    help='directory of rendered performances (repeatable, --batch only)')
+                    help='directory of rendered performances (repeatable, --batch only; '
+                         'defaults to the score directory)')
     ap.add_argument('--out-dir', default=None, help='where to write repaired files (--batch)')
     ap.add_argument('--max-drift', type=float, default=0.015,
                     help='reject a repair that shifts playback by more than this (seconds)')
@@ -516,7 +522,8 @@ def main():
 
     if args.batch:
         if not args.midi_dir:
-            args.midi_dir = ['/home/bonk/build/virtuosoNet/test_result']
+            # Scores and their renderings often sit together; otherwise say where.
+            args.midi_dir = [args.score]
         if not args.out_dir:
             args.out_dir = os.path.join(args.score, 'repaired_midi')
         return run_batch(args)
