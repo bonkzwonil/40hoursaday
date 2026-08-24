@@ -5,3 +5,9 @@ __pycache__/
 .DS_Store
 .vscode/
 .idea/
+
+# MIDI files are content, not source. The one sample score in
+# midi_files/ is tracked deliberately (added with -f).
+*.mid
+*.midi
+*.MID

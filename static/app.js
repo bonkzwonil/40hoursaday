@@ -61,6 +61,12 @@
             midiChannelsMute: "MIDI CHANNELS (CH 1–10)",
             resetVolumes: "Reset 100%",
             unmuteAll: "Unmute All",
+            toastBarOffset: "Barlines shifted {beats} beat(s)",
+            toastPickupZero: "Pickup bar = 0, first full bar = 1",
+            toastPickupOne: "Pickup bar counts as bar 1",
+            toastMeterReset: "Meter and barlines back to the file",
+            barLabel: "BAR",
+            beatLabel: "BEAT",
             mixerOutputs: "OUTPUT (MASTER)",
             mixerStreams: "APPLICATIONS & STREAMS",
             mixerLoading: "Loading audio streams...",
@@ -125,6 +131,12 @@
             midiChannelsMute: "MIDI-KANÄLE (CH 1–10)",
             resetVolumes: "Auf 100% zurücksetzen",
             unmuteAll: "Alle aktivieren",
+            toastBarOffset: "Taktstriche um {beats} Schlag(e) verschoben",
+            toastPickupZero: "Auftakt = 0, erster voller Takt = 1",
+            toastPickupOne: "Auftakt zählt als Takt 1",
+            toastMeterReset: "Taktart und Taktstriche wie in der Datei",
+            barLabel: "TAKT",
+            beatLabel: "SCHLAG",
             mixerOutputs: "AUSGANG (MASTER)",
             mixerStreams: "ANWENDUNGEN & AUDIO-STREAMS",
             mixerLoading: "Lade Audio-Streams...",
@@ -162,6 +174,15 @@
             loop: false,
             transpose: 0,
             count_in_bars: 0,
+            count_in_active: false,
+            count_in_current_beat: 0,
+            count_in_total_beats: 0,
+            bar: 1,
+            beat: 1,
+            beat_fraction: 0.0,
+            beats_per_bar: 4,
+            time_sig_num: 4,
+            time_sig_den: 4,
             muted_channels: [],
             channel_volumes: {},
             port: null,
@@ -173,7 +194,8 @@
         filteredFiles: [],
         searchQuery: '',
         isUserSeeking: false,
-        lastStatusUpdate: 0
+        lastStatusUpdate: 0,
+        lastStatusTime: performance.now()
     };
 
     // DOM Elements
@@ -191,6 +213,22 @@
         trackBpm: document.getElementById('track-bpm'),
         stateBadge: document.getElementById('playback-state-badge'),
         
+        // Metronome Deck
+        metroDeck: document.getElementById('metronome-deck'),
+        metroOffsetGroup: document.getElementById('metro-offset-group'),
+        metroOffsetVal: document.getElementById('metro-offset-val'),
+        metroPickupChip: document.getElementById('metro-pickup-chip'),
+        metroBarVal: document.getElementById('metro-bar-val'),
+        metroBeatVal: document.getElementById('metro-beat-val'),
+        metroBeatSub: document.getElementById('metro-beat-sub'),
+        metroDotsRow: document.getElementById('metro-dots-row'),
+        metroPulseBar: document.getElementById('metro-pulse-bar'),
+        metroCountinBadge: document.getElementById('metro-countin-badge'),
+        metroCountinBeat: document.getElementById('metro-countin-beat'),
+        metroCountinTotal: document.getElementById('metro-countin-total'),
+        metroMeterGroup: document.getElementById('metro-meter-group'),
+        metroMultGroup: document.getElementById('metro-mult-group'),
+
         timeCurrent: document.getElementById('time-current'),
         timeTotal: document.getElementById('time-total'),
         progressBar: document.getElementById('progress-bar'),
@@ -328,7 +366,22 @@
     // UI Updates
     function updateUI(status) {
         state.status = { ...state.status, ...status };
+        state.lastStatusTime = performance.now();
         const s = state.status;
+
+        if (status.beat_map && status.beat_map.length > 0) {
+            state.beatMap = status.beat_map;
+        }
+
+        if (s.state === 'playing' && !s.count_in_active) {
+            playbackBaseSongPos = s.position || 0;
+            playbackBaseWallTime = performance.now();
+            isPlaybackClockRunning = true;
+        } else {
+            isPlaybackClockRunning = false;
+            playbackBaseSongPos = s.position || 0;
+            playbackBaseWallTime = performance.now();
+        }
 
         // Port & Program Change
         if (s.port) {
@@ -389,6 +442,46 @@
             elements.btnLoop.classList.add('active');
         } else {
             elements.btnLoop.classList.remove('active');
+        }
+
+        // Active Meter & Multiplier Chips
+        if (elements.metroMeterGroup && s.time_signature) {
+            elements.metroMeterGroup.querySelectorAll('[data-meter]').forEach(btn => {
+                if (btn.dataset.meter === s.time_signature) {
+                    btn.classList.add('active');
+                } else {
+                    btn.classList.remove('active');
+                }
+            });
+        }
+
+        if (elements.metroOffsetVal) {
+            const off = s.grid_offset_beats || 0;
+            elements.metroOffsetVal.textContent = off ? (off > 0 ? `+${off}` : `${off}`) : '0';
+            elements.metroOffsetVal.classList.toggle('shifted', !!off || !!s.custom_meter);
+        }
+
+        // Auftakt numbering. Only meaningful when the piece actually has a pickup,
+        // so the chip dims itself rather than pretending to do something.
+        if (elements.metroPickupChip) {
+            const zero = s.pickup_bar_zero !== false;
+            elements.metroPickupChip.textContent = zero ? 'A:0' : 'A:1';
+            elements.metroPickupChip.title = zero
+                ? 'Pickup bar is 0, first full bar is 1 (score convention)'
+                : 'Pickup bar counts as bar 1';
+            elements.metroPickupChip.classList.toggle('active', !zero);
+            elements.metroPickupChip.classList.toggle('chip-dim', !s.has_pickup);
+        }
+
+        if (elements.metroMultGroup && s.meter_multiplier !== undefined) {
+            elements.metroMultGroup.querySelectorAll('[data-mult]').forEach(btn => {
+                const btnMult = parseFloat(btn.dataset.mult);
+                if (Math.abs(btnMult - s.meter_multiplier) < 0.05) {
+                    btn.classList.add('active');
+                } else {
+                    btn.classList.remove('active');
+                }
+            });
         }
 
         // Count-in toggle highlight
@@ -799,6 +892,63 @@
         if (elements.volumeSlider) {
             elements.volumeSlider.addEventListener('input', (e) => {
                 setVolumePercent(parseFloat(e.target.value));
+            });
+        }
+
+        // Metronome Meter Selector Chips
+        if (elements.metroMeterGroup) {
+            elements.metroMeterGroup.querySelectorAll('[data-meter]').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    const [num, den] = btn.dataset.meter.split('/').map(v => parseInt(v, 10));
+                    const res = await apiPost('meter', { numerator: num, denominator: den });
+                    if (res && res.status) updateUI(res.status);
+                    showToast(`Taktart: ${num}/${den}`);
+                });
+            });
+        }
+
+        // Barline nudge. A recorded performance often does not start its first bar
+        // on tick 0, and no amount of analysis can guess where the conductor was -
+        // so let the player slide the grid until the count sits on the music.
+        if (elements.metroOffsetGroup) {
+            elements.metroOffsetGroup.querySelectorAll('[data-offset]').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    const step = parseFloat(btn.dataset.offset);
+                    const beatsPerBar = state.status.beats_per_bar || 4;
+                    let next = (state.status.grid_offset_beats || 0) + step;
+                    // one full bar of shift is the same grid again
+                    next = ((next % beatsPerBar) + beatsPerBar) % beatsPerBar;
+                    const res = await apiPost('meter', { offset_beats: next });
+                    if (res && res.status) updateUI(res.status);
+                    showToast(t('toastBarOffset', { beats: next }));
+                });
+            });
+            elements.metroOffsetGroup.querySelectorAll('[data-pickup-toggle]').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    const next = !(state.status.pickup_bar_zero !== false);
+                    const res = await apiPost('meter', { pickup_bar_zero: next });
+                    if (res && res.status) updateUI(res.status);
+                    showToast(next ? t('toastPickupZero') : t('toastPickupOne'));
+                });
+            });
+            elements.metroOffsetGroup.querySelectorAll('[data-meter-reset]').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    const res = await apiPost('meter', { reset: true });
+                    if (res && res.status) updateUI(res.status);
+                    showToast(t('toastMeterReset'));
+                });
+            });
+        }
+
+        // Metronome Division/Multiplier Chips
+        if (elements.metroMultGroup) {
+            elements.metroMultGroup.querySelectorAll('[data-mult]').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    const mult = parseFloat(btn.dataset.mult);
+                    const res = await apiPost('meter', { multiplier: mult });
+                    if (res && res.status) updateUI(res.status);
+                    showToast(`Beat-Teilung: ${btn.textContent}`);
+                });
             });
         }
 
@@ -1360,6 +1510,189 @@
         });
     }
 
+    // 60 FPS Flashing Metronome & Bar Counter Animation Engine
+    let lastRenderedBeatsPerBar = '';
+    let lastFlashedKey = '';
+    let flashTimer = null;
+    let playbackBaseSongPos = 0;
+    let playbackBaseWallTime = performance.now();
+    let isPlaybackClockRunning = false;
+
+    // Beats that carry a natural accent. Compound meters group their eighths in
+    // threes, so 6/8 is felt in 2 and 9/8 in 3 - not as six or nine equal beats.
+    function strongBeats(num, den) {
+        const s = new Set([1]);
+        if (den >= 8 && num % 3 === 0 && [6, 9, 12].includes(num)) {
+            for (let i = 1; i <= num; i += 3) s.add(i);
+        } else if (num === 4) {
+            s.add(3);
+        }
+        return s;
+    }
+
+    function renderMetronomeDots(beatsPerBar, den) {
+        if (!elements.metroDotsRow) return;
+        beatsPerBar = Math.max(1, beatsPerBar || 4);
+        den = den || 4;
+        const key = `${beatsPerBar}/${den}`;
+        if (lastRenderedBeatsPerBar === key) return;
+        lastRenderedBeatsPerBar = key;
+
+        const strong = strongBeats(beatsPerBar, den);
+        let html = '';
+        for (let b = 1; b <= beatsPerBar; b++) {
+            const cls = b === 1 ? 'dot-accent' : (strong.has(b) ? 'dot-strong' : '');
+            html += `<span class="metro-dot ${cls}" data-beat="${b}"></span>`;
+        }
+        elements.metroDotsRow.innerHTML = html;
+    }
+
+    function updateMetronomeFrame() {
+        const s = state.status;
+        let beatsPerBar = s.time_sig_num || s.beats_per_bar || 4;
+
+        // Count-in Active Mode
+        if (s.count_in_active) {
+            if (elements.metroCountinBadge) {
+                elements.metroCountinBadge.style.display = 'block';
+                if (elements.metroCountinBeat) elements.metroCountinBeat.textContent = s.count_in_current_beat || 1;
+                if (elements.metroCountinTotal) elements.metroCountinTotal.textContent = s.count_in_total_beats || 4;
+            }
+            if (elements.metroDotsRow) elements.metroDotsRow.style.display = 'none';
+            if (elements.metroBarVal) elements.metroBarVal.textContent = "0";
+            if (elements.metroBeatVal) elements.metroBeatVal.textContent = s.count_in_current_beat || 1;
+            if (elements.metroBeatSub) elements.metroBeatSub.textContent = `/ ${s.count_in_total_beats || 4}`;
+            if (elements.metroPulseBar) elements.metroPulseBar.style.width = '100%';
+            return;
+        } else {
+            if (elements.metroCountinBadge) elements.metroCountinBadge.style.display = 'none';
+            if (elements.metroDotsRow) elements.metroDotsRow.style.display = 'flex';
+        }
+
+        let currentBar = s.bar || 1;
+        let currentBeat = s.beat || 1;
+        let beatFraction = s.beat_fraction || 0.0;
+        let currentBpm = s.bpm || 120;
+        let currentDen = s.time_sig_den || 4;
+        let isAccent = s.accent !== undefined ? s.accent : (currentBeat === 1);
+        let isDownbeat = s.downbeat !== undefined ? s.downbeat : (currentBeat === 1);
+
+        // Smooth monotonic 60fps interpolation with exact piece tempo map
+        if (s.state === 'playing' && !s.count_in_active) {
+            const elapsedSec = (performance.now() - playbackBaseWallTime) / 1000.0;
+            const currentPos = Math.min(s.duration || 0, Math.max(0, playbackBaseSongPos + elapsedSec * (s.speed || 1.0)));
+
+            const beatMap = state.beatMap || s.beat_map;
+            if (beatMap && beatMap.length > 0) {
+                // Binary search for exact beat in beatMap
+                let low = 0, high = beatMap.length - 1, idx = 0;
+                while (low <= high) {
+                    const mid = (low + high) >> 1;
+                    if (beatMap[mid].time <= currentPos) {
+                        idx = mid;
+                        low = mid + 1;
+                    } else {
+                        high = mid - 1;
+                    }
+                }
+                const b = beatMap[idx];
+                currentBar = b.bar;
+                currentBeat = b.beat;
+                beatsPerBar = b.beats_per_bar;
+                currentBpm = b.bpm;
+                currentDen = b.time_sig_den || currentDen;
+                isAccent = b.accent !== undefined ? b.accent : (b.beat === 1);
+                isDownbeat = b.downbeat !== undefined ? b.downbeat : (b.beat === 1);
+                // Each beat is measured against its own length, so the pulse stays
+                // locked to the music through an accelerando or a ritardando.
+                const elapsedInBeat = currentPos - b.time;
+                beatFraction = Math.min(1.0, Math.max(0.0, elapsedInBeat / Math.max(0.001, b.duration)));
+            } else {
+                const effectiveBpm = Math.max(10, s.bpm || 120);
+                const secPerBeat = 60.0 / effectiveBpm;
+                const totalBeats = currentPos / secPerBeat;
+                currentBar = Math.floor(totalBeats / beatsPerBar) + 1;
+                currentBeat = (Math.floor(totalBeats) % beatsPerBar) + 1;
+                beatFraction = totalBeats % 1.0;
+                isDownbeat = currentBeat === 1;
+                isAccent = strongBeats(beatsPerBar, currentDen).has(currentBeat);
+            }
+        }
+
+        renderMetronomeDots(beatsPerBar, currentDen);
+
+        // Update Counter Display & Live Tempo
+        if (elements.metroBarVal) elements.metroBarVal.textContent = currentBar;
+        if (elements.metroBeatVal) elements.metroBeatVal.textContent = currentBeat;
+        if (elements.metroBeatSub) elements.metroBeatSub.textContent = `/ ${beatsPerBar}`;
+        if (elements.trackMeter && s.time_signature) elements.trackMeter.textContent = s.time_signature;
+        // Files whose tempo map records a human performance carry a set_tempo on
+        // every beat; their live tempo swings so hard it is unreadable, so those
+        // show the piece's settled tempo instead. Files with real tempo marks show
+        // the live one, because an accelerando is something you want to watch.
+        const displayBpm = (s.expressive_tempo || s.state !== 'playing')
+            ? (s.nominal_bpm || currentBpm)
+            : (currentBpm || s.nominal_bpm);
+        if (elements.trackBpm && displayBpm) elements.trackBpm.textContent = `${Math.round(displayBpm)} BPM`;
+        if (elements.tempoCalcBpm && displayBpm) {
+            const calcBpm = Math.round(displayBpm * (s.speed || 1.0));
+            elements.tempoCalcBpm.textContent = `(${calcBpm} BPM)`;
+        }
+        if (elements.metroPulseBar) {
+            elements.metroPulseBar.style.width = s.state === 'playing' ? `${Math.min(100, Math.max(0, beatFraction * 100))}%` : '0%';
+        }
+
+        // Trigger Flashing strictly on new Beat Key (e.g. "14:1", "14:2", "14:3", "14:4")
+        if (s.state === 'playing') {
+            const beatKey = `${currentBar}:${currentBeat}`;
+            if (beatKey !== lastFlashedKey) {
+                lastFlashedKey = beatKey;
+                if (elements.metroDeck) {
+                    clearTimeout(flashTimer);
+                    elements.metroDeck.classList.remove('flash-accent', 'flash-beat');
+                    // The downbeat gets the strongest flash, a secondary strong beat
+                    // (the 4th eighth of a 6/8 bar, the 3rd beat of a 4/4 bar) a
+                    // shorter one, everything else the plain beat flash.
+                    const cls = isAccent ? 'flash-accent' : 'flash-beat';
+                    const hold = isDownbeat ? 130 : (isAccent ? 105 : 90);
+                    elements.metroDeck.classList.add(cls);
+                    flashTimer = setTimeout(() => {
+                        if (elements.metroDeck) elements.metroDeck.classList.remove(cls);
+                    }, hold);
+                }
+            }
+        } else {
+            lastFlashedKey = '';
+            if (elements.metroDeck) elements.metroDeck.classList.remove('flash-accent', 'flash-beat');
+        }
+
+        // Update Active LED Beat Dot
+        if (elements.metroDotsRow) {
+            elements.metroDotsRow.querySelectorAll('.metro-dot').forEach(dot => {
+                const b = parseInt(dot.getAttribute('data-beat'), 10);
+                if (b === currentBeat && s.state === 'playing') {
+                    if (isDownbeat) {
+                        dot.classList.add('active');
+                        dot.classList.remove('beat-active');
+                    } else {
+                        dot.classList.add('beat-active');
+                        dot.classList.remove('active');
+                    }
+                } else {
+                    dot.classList.remove('active', 'beat-active');
+                }
+            });
+        }
+    }
+
+    function startMetronomeLoop() {
+        function loop() {
+            updateMetronomeFrame();
+            requestAnimationFrame(loop);
+        }
+        requestAnimationFrame(loop);
+    }
+
     // Real-time Event Stream (SSE)
     function startEventStream() {
         if (!window.EventSource) {
@@ -1405,6 +1738,7 @@
             updateUI(initialStatus);
         }
 
+        startMetronomeLoop();
         startEventStream();
     }
 

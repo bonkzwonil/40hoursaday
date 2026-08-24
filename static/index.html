@@ -68,6 +68,65 @@
                 <h2 class="track-title" id="current-track-title" data-i18n="noTrackSelected">No piece selected</h2>
             </div>
 
+            <!-- Flashing Bar Counter & Visual Metronome -->
+            <div class="metronome-card" id="metronome-deck">
+                <div class="metro-main-row">
+                    <!-- Bar Counter -->
+                    <div class="metro-stat-box bar-box">
+                        <span class="metro-stat-label" data-i18n="barLabel">BAR</span>
+                        <span class="metro-stat-val" id="metro-bar-val">1</span>
+                    </div>
+
+                    <!-- Visual Beat LED Dots & Pulse Indicator -->
+                    <div class="metro-center-box">
+                        <div class="metro-countin-badge" id="metro-countin-badge" style="display: none;">
+                            ⏱ <span data-i18n="countinLabel">COUNT-IN</span>: <span id="metro-countin-beat">1</span> / <span id="metro-countin-total">4</span>
+                        </div>
+                        <div class="metro-dots-row" id="metro-dots-row">
+                            <span class="metro-dot dot-accent" data-beat="1"></span>
+                            <span class="metro-dot" data-beat="2"></span>
+                            <span class="metro-dot" data-beat="3"></span>
+                            <span class="metro-dot" data-beat="4"></span>
+                        </div>
+                        <div class="metro-pulse-bar-wrapper">
+                            <div class="metro-pulse-bar" id="metro-pulse-bar"></div>
+                        </div>
+                    </div>
+
+                    <!-- Beat Counter -->
+                    <div class="metro-stat-box beat-box">
+                        <span class="metro-stat-label" data-i18n="beatLabel">BEAT</span>
+                        <div class="metro-beat-val-group">
+                            <span class="metro-stat-val" id="metro-beat-val">1</span>
+                            <span class="metro-stat-sub" id="metro-beat-sub">/ 4</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Meter & Division Controls -->
+                <div class="metro-controls-row">
+                    <div class="metro-meter-group" id="metro-meter-group">
+                        <button type="button" class="metro-chip" data-meter="4/4">4/4</button>
+                        <button type="button" class="metro-chip" data-meter="3/4">3/4</button>
+                        <button type="button" class="metro-chip" data-meter="2/4">2/4</button>
+                        <button type="button" class="metro-chip" data-meter="6/8">6/8</button>
+                    </div>
+                    <div class="metro-mult-group" id="metro-mult-group">
+                        <button type="button" class="metro-chip" data-mult="0.5" title="Cut time / Half beat">½×</button>
+                        <button type="button" class="metro-chip active" data-mult="1.0" title="Normal 1x beat">1×</button>
+                        <button type="button" class="metro-chip" data-mult="2.0" title="Double beat / 2x">2×</button>
+                    </div>
+                    <!-- Barline nudge: some files do not put bar 1 on tick 0 -->
+                    <div class="metro-offset-group" id="metro-offset-group">
+                        <button type="button" class="metro-chip" data-offset="-1" title="Move the barlines one beat earlier">◀</button>
+                        <span class="metro-offset-val" id="metro-offset-val" title="Barline offset in beats">0</span>
+                        <button type="button" class="metro-chip" data-offset="1" title="Move the barlines one beat later">▶</button>
+                        <button type="button" class="metro-chip" data-pickup-toggle="1" id="metro-pickup-chip" title="How to number a pickup bar (Auftakt)">A:0</button>
+                        <button type="button" class="metro-chip" data-meter-reset="1" title="Back to the meter and barlines stored in the file">⟲</button>
+                    </div>
+                </div>
+            </div>
+
             <!-- Scrubber / Timeline -->
             <div class="scrubber-container">
                 <div class="time-display">

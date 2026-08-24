@@ -32,13 +32,11 @@ def main():
     primary_midi_dir = os.path.join(script_dir, "midi_files")
     os.makedirs(primary_midi_dir, exist_ok=True)
 
+    # Kept deliberately small. Add anything else with -d/--midi-dir, which is
+    # repeatable, rather than growing a list of one person's folder names.
     default_dirs = [
         primary_midi_dir,
-        os.path.expanduser("~/midi"),
         os.path.expanduser("~/Music"),
-        os.path.expanduser("~/Documents"),
-        os.path.expanduser("~/Pianoteq 8 STAGE"),
-        os.path.expanduser("~/Pianoteq"),
     ]
     
     midi_dirs = args.midi_dir if args.midi_dir else default_dirs

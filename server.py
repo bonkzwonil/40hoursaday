@@ -106,7 +106,7 @@ class PracticePartnerHandler(SimpleHTTPRequestHandler):
 
             try:
                 while True:
-                    status = self.player.get_status()
+                    status = self.player.get_status(include_beat_map=False)
                     msg = f"data: {json.dumps(status)}\n\n".encode("utf-8")
                     self.wfile.write(msg)
                     self.wfile.flush()
@@ -267,6 +267,26 @@ class PracticePartnerHandler(SimpleHTTPRequestHandler):
                 self._send_json({"success": ok, "status": self.player.get_status()})
             else:
                 self._send_error("Missing 'channel' or 'volume' parameter")
+            return
+
+        if path == "/api/meter":
+            body = self._parse_json_body() or {}
+            num = body.get("numerator")
+            den = body.get("denominator")
+            mult = body.get("multiplier")
+            offset = body.get("offset_beats")
+            bar_offset = body.get("bar_offset")
+            pickup_zero = body.get("pickup_bar_zero")
+            ok = self.player.set_meter(
+                numerator=int(num) if num is not None else None,
+                denominator=int(den) if den is not None else None,
+                multiplier=float(mult) if mult is not None else None,
+                offset_beats=float(offset) if offset is not None else None,
+                bar_offset=int(bar_offset) if bar_offset is not None else None,
+                pickup_bar_zero=bool(pickup_zero) if pickup_zero is not None else None,
+                reset=bool(body.get("reset", False))
+            )
+            self._send_json({"success": ok, "status": self.player.get_status()})
             return
 
         if path == "/api/channel/reset_volumes" or path == "/api/channel_reset_volumes":
