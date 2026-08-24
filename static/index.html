@@ -68,6 +68,42 @@
                 <h2 class="track-title" id="current-track-title" data-i18n="noTrackSelected">No piece selected</h2>
             </div>
 
+            <!-- Flashing Bar Counter & Visual Metronome -->
+            <div class="metronome-card" id="metronome-deck">
+                <div class="metro-main-row">
+                    <!-- Bar Counter -->
+                    <div class="metro-stat-box bar-box">
+                        <span class="metro-stat-label" data-i18n="barLabel">BAR</span>
+                        <span class="metro-stat-val" id="metro-bar-val">1</span>
+                    </div>
+
+                    <!-- Visual Beat LED Dots & Pulse Indicator -->
+                    <div class="metro-center-box">
+                        <div class="metro-countin-badge" id="metro-countin-badge" style="display: none;">
+                            ⏱ <span data-i18n="countinLabel">COUNT-IN</span>: <span id="metro-countin-beat">1</span> / <span id="metro-countin-total">4</span>
+                        </div>
+                        <div class="metro-dots-row" id="metro-dots-row">
+                            <span class="metro-dot dot-accent" data-beat="1"></span>
+                            <span class="metro-dot" data-beat="2"></span>
+                            <span class="metro-dot" data-beat="3"></span>
+                            <span class="metro-dot" data-beat="4"></span>
+                        </div>
+                        <div class="metro-pulse-bar-wrapper">
+                            <div class="metro-pulse-bar" id="metro-pulse-bar"></div>
+                        </div>
+                    </div>
+
+                    <!-- Beat Counter -->
+                    <div class="metro-stat-box beat-box">
+                        <span class="metro-stat-label" data-i18n="beatLabel">BEAT</span>
+                        <div class="metro-beat-val-group">
+                            <span class="metro-stat-val" id="metro-beat-val">1</span>
+                            <span class="metro-stat-sub" id="metro-beat-sub">/ 4</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Scrubber / Timeline -->
             <div class="scrubber-container">
                 <div class="time-display">

@@ -61,6 +61,8 @@
             midiChannelsMute: "MIDI CHANNELS (CH 1–10)",
             resetVolumes: "Reset 100%",
             unmuteAll: "Unmute All",
+            barLabel: "BAR",
+            beatLabel: "BEAT",
             mixerOutputs: "OUTPUT (MASTER)",
             mixerStreams: "APPLICATIONS & STREAMS",
             mixerLoading: "Loading audio streams...",
@@ -125,6 +127,8 @@
             midiChannelsMute: "MIDI-KANÄLE (CH 1–10)",
             resetVolumes: "Auf 100% zurücksetzen",
             unmuteAll: "Alle aktivieren",
+            barLabel: "TAKT",
+            beatLabel: "SCHLAG",
             mixerOutputs: "AUSGANG (MASTER)",
             mixerStreams: "ANWENDUNGEN & AUDIO-STREAMS",
             mixerLoading: "Lade Audio-Streams...",
@@ -162,6 +166,15 @@
             loop: false,
             transpose: 0,
             count_in_bars: 0,
+            count_in_active: false,
+            count_in_current_beat: 0,
+            count_in_total_beats: 0,
+            bar: 1,
+            beat: 1,
+            beat_fraction: 0.0,
+            beats_per_bar: 4,
+            time_sig_num: 4,
+            time_sig_den: 4,
             muted_channels: [],
             channel_volumes: {},
             port: null,
@@ -173,7 +186,8 @@
         filteredFiles: [],
         searchQuery: '',
         isUserSeeking: false,
-        lastStatusUpdate: 0
+        lastStatusUpdate: 0,
+        lastStatusTime: performance.now()
     };
 
     // DOM Elements
@@ -191,6 +205,17 @@
         trackBpm: document.getElementById('track-bpm'),
         stateBadge: document.getElementById('playback-state-badge'),
         
+        // Metronome Deck
+        metroDeck: document.getElementById('metronome-deck'),
+        metroBarVal: document.getElementById('metro-bar-val'),
+        metroBeatVal: document.getElementById('metro-beat-val'),
+        metroBeatSub: document.getElementById('metro-beat-sub'),
+        metroDotsRow: document.getElementById('metro-dots-row'),
+        metroPulseBar: document.getElementById('metro-pulse-bar'),
+        metroCountinBadge: document.getElementById('metro-countin-badge'),
+        metroCountinBeat: document.getElementById('metro-countin-beat'),
+        metroCountinTotal: document.getElementById('metro-countin-total'),
+
         timeCurrent: document.getElementById('time-current'),
         timeTotal: document.getElementById('time-total'),
         progressBar: document.getElementById('progress-bar'),
@@ -328,6 +353,7 @@
     // UI Updates
     function updateUI(status) {
         state.status = { ...state.status, ...status };
+        state.lastStatusTime = performance.now();
         const s = state.status;
 
         // Port & Program Change
@@ -1360,6 +1386,124 @@
         });
     }
 
+    // 60 FPS Flashing Metronome & Bar Counter Animation Engine
+    let lastRenderedBeatsPerBar = 0;
+    let lastFlashedBeat = -1;
+    let flashTimer = null;
+
+    function renderMetronomeDots(beatsPerBar) {
+        if (!elements.metroDotsRow) return;
+        beatsPerBar = Math.max(1, beatsPerBar || 4);
+        if (lastRenderedBeatsPerBar === beatsPerBar) return;
+        lastRenderedBeatsPerBar = beatsPerBar;
+
+        let html = '';
+        for (let b = 1; b <= beatsPerBar; b++) {
+            const isAccent = (b === 1);
+            html += `<span class="metro-dot ${isAccent ? 'dot-accent' : ''}" data-beat="${b}"></span>`;
+        }
+        elements.metroDotsRow.innerHTML = html;
+    }
+
+    function updateMetronomeFrame() {
+        const s = state.status;
+        const beatsPerBar = s.time_sig_num || s.beats_per_bar || 4;
+        renderMetronomeDots(beatsPerBar);
+
+        // Count-in Active Mode
+        if (s.count_in_active) {
+            if (elements.metroCountinBadge) {
+                elements.metroCountinBadge.style.display = 'block';
+                if (elements.metroCountinBeat) elements.metroCountinBeat.textContent = s.count_in_current_beat || 1;
+                if (elements.metroCountinTotal) elements.metroCountinTotal.textContent = s.count_in_total_beats || 4;
+            }
+            if (elements.metroDotsRow) elements.metroDotsRow.style.display = 'none';
+            if (elements.metroBarVal) elements.metroBarVal.textContent = "0";
+            if (elements.metroBeatVal) elements.metroBeatVal.textContent = s.count_in_current_beat || 1;
+            if (elements.metroBeatSub) elements.metroBeatSub.textContent = `/ ${s.count_in_total_beats || 4}`;
+            if (elements.metroPulseBar) elements.metroPulseBar.style.width = '100%';
+            return;
+        } else {
+            if (elements.metroCountinBadge) elements.metroCountinBadge.style.display = 'none';
+            if (elements.metroDotsRow) elements.metroDotsRow.style.display = 'flex';
+        }
+
+        let currentBar = s.bar || 1;
+        let currentBeat = s.beat || 1;
+        let beatFraction = s.beat_fraction || 0.0;
+
+        // Smooth 60fps interpolation between SSE status updates
+        if (s.state === 'playing') {
+            const now = performance.now();
+            const elapsedSec = (now - state.lastStatusTime) / 1000.0;
+            const currentPos = Math.min(s.duration || 0, s.position + elapsedSec * (s.speed || 1.0));
+
+            const effectiveBpm = Math.max(10, s.bpm || 120);
+            const secPerBeat = 60.0 / effectiveBpm;
+            const totalBeats = currentPos / secPerBeat;
+            currentBar = Math.floor(totalBeats / beatsPerBar) + 1;
+            currentBeat = (Math.floor(totalBeats) % beatsPerBar) + 1;
+            beatFraction = totalBeats % 1.0;
+        }
+
+        // Update Counter Display
+        if (elements.metroBarVal) elements.metroBarVal.textContent = currentBar;
+        if (elements.metroBeatVal) elements.metroBeatVal.textContent = currentBeat;
+        if (elements.metroBeatSub) elements.metroBeatSub.textContent = `/ ${beatsPerBar}`;
+        if (elements.metroPulseBar) {
+            elements.metroPulseBar.style.width = s.state === 'playing' ? `${Math.min(100, Math.max(0, beatFraction * 100))}%` : '0%';
+        }
+
+        // Trigger Flashing on Beat Transitions during active playback
+        if (s.state === 'playing' && currentBeat !== lastFlashedBeat) {
+            lastFlashedBeat = currentBeat;
+            if (elements.metroDeck) {
+                clearTimeout(flashTimer);
+                elements.metroDeck.classList.remove('flash-accent', 'flash-beat');
+                if (currentBeat === 1) {
+                    elements.metroDeck.classList.add('flash-accent');
+                    flashTimer = setTimeout(() => {
+                        if (elements.metroDeck) elements.metroDeck.classList.remove('flash-accent');
+                    }, 140);
+                } else {
+                    elements.metroDeck.classList.add('flash-beat');
+                    flashTimer = setTimeout(() => {
+                        if (elements.metroDeck) elements.metroDeck.classList.remove('flash-beat');
+                    }, 100);
+                }
+            }
+        } else if (s.state !== 'playing') {
+            lastFlashedBeat = -1;
+            if (elements.metroDeck) elements.metroDeck.classList.remove('flash-accent', 'flash-beat');
+        }
+
+        // Update Active LED Beat Dot
+        if (elements.metroDotsRow) {
+            elements.metroDotsRow.querySelectorAll('.metro-dot').forEach(dot => {
+                const b = parseInt(dot.getAttribute('data-beat'), 10);
+                if (b === currentBeat && s.state === 'playing') {
+                    if (b === 1) {
+                        dot.classList.add('active');
+                        dot.classList.remove('beat-active');
+                    } else {
+                        dot.classList.add('beat-active');
+                        dot.classList.remove('active');
+                    }
+                } else {
+                    dot.classList.remove('active', 'beat-active');
+                }
+            });
+        }
+    }
+
+    function startMetronomeLoop() {
+        function loop() {
+            updateMetronomeFrame();
+            requestAnimationFrame(loop);
+        }
+        requestAnimationFrame(loop);
+    }
+
     // Real-time Event Stream (SSE)
     function startEventStream() {
         if (!window.EventSource) {
@@ -1405,6 +1549,7 @@
             updateUI(initialStatus);
         }
 
+        startMetronomeLoop();
         startEventStream();
     }
 

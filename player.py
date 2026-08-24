@@ -51,6 +51,9 @@ class MidiPlayer:
         self.loop: bool = False
         self.transpose: int = 0  # Semitone shift (-12 to +12)
         self.count_in_bars: int = 0  # 0 = off, 1 = 1 bar, 2 = 2 bars
+        self.count_in_active: bool = False
+        self.count_in_current_beat: int = 0
+        self.count_in_total_beats: int = 0
         self.muted_channels: set = set()  # Set of 0-indexed muted channels (0..15)
         self.channel_volumes: Dict[int, float] = {ch: 1.0 for ch in range(16)}  # 0-indexed channel volumes (0.0 to 1.0)
 
@@ -293,6 +296,8 @@ class MidiPlayer:
             self._should_stop = True
             self.state = "idle"
             self.position = 0.0
+            self.count_in_active = False
+            self.count_in_current_beat = 0
             self._wake_event.set()
 
         if self._worker_thread and self._worker_thread.is_alive():
@@ -426,6 +431,21 @@ class MidiPlayer:
         except Exception as e:
             print(f"[MidiPlayer] Panic error: {e}")
 
+    def get_bar_beat(self, pos: Optional[float] = None) -> Tuple[int, int, float, int]:
+        """Calculates (bar, beat, beat_fraction, beats_per_bar) for a given song position."""
+        if pos is None:
+            pos = self.position
+        
+        beats_per_bar = max(1, self.time_signature[0])
+        effective_bpm = max(10.0, self.bpm)
+        sec_per_beat = 60.0 / effective_bpm
+        
+        total_beats = pos / sec_per_beat if sec_per_beat > 0 else 0.0
+        bar = int(math.floor(total_beats / beats_per_bar)) + 1
+        beat = int(math.floor(total_beats % beats_per_bar)) + 1
+        beat_fraction = total_beats % 1.0
+        return (bar, beat, round(beat_fraction, 3), beats_per_bar)
+
     def _update_position_unlocked(self):
         """Internal helper to calculate real-time position."""
         if self.state == "playing":
@@ -437,6 +457,7 @@ class MidiPlayer:
         with self.lock:
             self._update_position_unlocked()
             available = self.get_available_ports()
+            bar, beat, beat_fraction, beats_per_bar = self.get_bar_beat(self.position)
             return {
                 "state": self.state,
                 "filename": self.current_filename,
@@ -450,6 +471,15 @@ class MidiPlayer:
                 "loop": self.loop,
                 "transpose": self.transpose,
                 "count_in_bars": self.count_in_bars,
+                "count_in_active": self.count_in_active,
+                "count_in_current_beat": self.count_in_current_beat,
+                "count_in_total_beats": self.count_in_total_beats,
+                "bar": bar,
+                "beat": beat,
+                "beat_fraction": beat_fraction,
+                "beats_per_bar": beats_per_bar,
+                "time_sig_num": self.time_signature[0],
+                "time_sig_den": self.time_signature[1],
                 "muted_channels": [ch + 1 for ch in sorted(self.muted_channels)],
                 "channel_volumes": {ch + 1: int(round(self.channel_volumes.get(ch, 1.0) * 100)) for ch in range(10)},
                 "port": self.target_port_name,
@@ -468,32 +498,44 @@ class MidiPlayer:
         beats_per_bar = self.time_signature[0]
         total_beats = self.count_in_bars * beats_per_bar
         base_beat_duration = 60.0 / max(20.0, self.bpm)
+
+        with self.lock:
+            self.count_in_active = True
+            self.count_in_total_beats = total_beats
+            self.count_in_current_beat = 0
         
-        for beat in range(total_beats):
-            if self._should_stop:
-                return False
+        try:
+            for beat in range(total_beats):
+                if self._should_stop:
+                    return False
 
+                with self.lock:
+                    self.count_in_current_beat = beat + 1
+                    current_speed = self.speed
+                    current_volume = self.volume
+
+                beat_duration = base_beat_duration / current_speed
+                is_accent = (beat % beats_per_bar == 0)
+                note = 76 if is_accent else 77  # GM Woodblock
+                base_vel = 110 if is_accent else 85
+                vel = 0 if current_volume <= 0 else max(1, min(127, int(round(base_vel * current_volume))))
+
+                try:
+                    port.send(mido.Message('note_on', channel=9, note=note, velocity=vel))
+                    sleep_note = min(0.05, beat_duration * 0.3)
+                    time.sleep(sleep_note)
+                    port.send(mido.Message('note_off', channel=9, note=note, velocity=0))
+                    remaining = max(0.0, beat_duration - sleep_note)
+                    if remaining > 0:
+                        time.sleep(remaining)
+                except Exception as e:
+                    print(f"[MidiPlayer] Count-in error: {e}")
+                    time.sleep(beat_duration)
+        finally:
             with self.lock:
-                current_speed = self.speed
-                current_volume = self.volume
-
-            beat_duration = base_beat_duration / current_speed
-            is_accent = (beat % beats_per_bar == 0)
-            note = 76 if is_accent else 77  # GM Woodblock
-            base_vel = 110 if is_accent else 85
-            vel = 0 if current_volume <= 0 else max(1, min(127, int(round(base_vel * current_volume))))
-
-            try:
-                port.send(mido.Message('note_on', channel=9, note=note, velocity=vel))
-                sleep_note = min(0.05, beat_duration * 0.3)
-                time.sleep(sleep_note)
-                port.send(mido.Message('note_off', channel=9, note=note, velocity=0))
-                remaining = max(0.0, beat_duration - sleep_note)
-                if remaining > 0:
-                    time.sleep(remaining)
-            except Exception as e:
-                print(f"[MidiPlayer] Count-in error: {e}")
-                time.sleep(beat_duration)
+                self.count_in_active = False
+                self.count_in_current_beat = 0
+                self.count_in_total_beats = 0
 
         return True
 
