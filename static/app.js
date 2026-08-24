@@ -362,18 +362,10 @@
             state.beatMap = status.beat_map;
         }
 
-        if (s.state === 'playing') {
-            if (!isPlaybackClockRunning) {
-                isPlaybackClockRunning = true;
-                playbackBaseSongPos = s.position || 0;
-                playbackBaseWallTime = performance.now();
-            } else {
-                const localPos = playbackBaseSongPos + ((performance.now() - playbackBaseWallTime) / 1000.0) * (s.speed || 1.0);
-                if (Math.abs(localPos - s.position) > 0.25) {
-                    playbackBaseSongPos = s.position;
-                    playbackBaseWallTime = performance.now();
-                }
-            }
+        if (s.state === 'playing' && !s.count_in_active) {
+            playbackBaseSongPos = s.position || 0;
+            playbackBaseWallTime = performance.now();
+            isPlaybackClockRunning = true;
         } else {
             isPlaybackClockRunning = false;
             playbackBaseSongPos = s.position || 0;
@@ -1506,7 +1498,7 @@
         let currentBpm = s.bpm || 120;
 
         // Smooth monotonic 60fps interpolation with exact piece tempo map
-        if (s.state === 'playing') {
+        if (s.state === 'playing' && !s.count_in_active) {
             const elapsedSec = (performance.now() - playbackBaseWallTime) / 1000.0;
             const currentPos = Math.min(s.duration || 0, Math.max(0, playbackBaseSongPos + elapsedSec * (s.speed || 1.0)));
 
