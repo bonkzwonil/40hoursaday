@@ -34,9 +34,11 @@ def main():
 
     default_dirs = [
         primary_midi_dir,
+        os.path.expanduser("~/jazz_midis"),
         os.path.expanduser("~/midi"),
         os.path.expanduser("~/Music"),
         os.path.expanduser("~/Documents"),
+        os.path.expanduser("~/Downloads"),
         os.path.expanduser("~/Pianoteq 8 STAGE"),
         os.path.expanduser("~/Pianoteq"),
     ]
