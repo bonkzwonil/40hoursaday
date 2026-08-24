@@ -1431,25 +1431,57 @@
         let currentBar = s.bar || 1;
         let currentBeat = s.beat || 1;
         let beatFraction = s.beat_fraction || 0.0;
+        let beatsPerBar = s.time_sig_num || s.beats_per_bar || 4;
+        let currentBpm = s.bpm || 120;
 
-        // Smooth 60fps interpolation between SSE status updates
+        // Smooth 60fps interpolation with exact piece tempo map
         if (s.state === 'playing') {
             const now = performance.now();
             const elapsedSec = (now - state.lastStatusTime) / 1000.0;
             const currentPos = Math.min(s.duration || 0, s.position + elapsedSec * (s.speed || 1.0));
 
-            const effectiveBpm = Math.max(10, s.bpm || 120);
-            const secPerBeat = 60.0 / effectiveBpm;
-            const totalBeats = currentPos / secPerBeat;
-            currentBar = Math.floor(totalBeats / beatsPerBar) + 1;
-            currentBeat = (Math.floor(totalBeats) % beatsPerBar) + 1;
-            beatFraction = totalBeats % 1.0;
+            const beatMap = s.beat_map;
+            if (beatMap && beatMap.length > 0) {
+                // Binary search for current beat in beatMap
+                let low = 0, high = beatMap.length - 1, idx = 0;
+                while (low <= high) {
+                    const mid = (low + high) >> 1;
+                    if (beatMap[mid].time <= currentPos) {
+                        idx = mid;
+                        low = mid + 1;
+                    } else {
+                        high = mid - 1;
+                    }
+                }
+                const b = beatMap[idx];
+                currentBar = b.bar;
+                currentBeat = b.beat;
+                beatsPerBar = b.beats_per_bar;
+                currentBpm = b.bpm;
+                const elapsedInBeat = currentPos - b.time;
+                beatFraction = Math.min(1.0, Math.max(0.0, elapsedInBeat / Math.max(0.001, b.duration)));
+            } else {
+                const effectiveBpm = Math.max(10, s.bpm || 120);
+                const secPerBeat = 60.0 / effectiveBpm;
+                const totalBeats = currentPos / secPerBeat;
+                currentBar = Math.floor(totalBeats / beatsPerBar) + 1;
+                currentBeat = (Math.floor(totalBeats) % beatsPerBar) + 1;
+                beatFraction = totalBeats % 1.0;
+            }
         }
 
-        // Update Counter Display
+        renderMetronomeDots(beatsPerBar);
+
+        // Update Counter Display & Live Tempo
         if (elements.metroBarVal) elements.metroBarVal.textContent = currentBar;
         if (elements.metroBeatVal) elements.metroBeatVal.textContent = currentBeat;
         if (elements.metroBeatSub) elements.metroBeatSub.textContent = `/ ${beatsPerBar}`;
+        if (elements.trackMeter && s.time_signature) elements.trackMeter.textContent = s.time_signature;
+        if (elements.trackBpm && currentBpm) elements.trackBpm.textContent = `${Math.round(currentBpm)} BPM`;
+        if (elements.tempoCalcBpm && currentBpm) {
+            const calcBpm = Math.round(currentBpm * (s.speed || 1.0));
+            elements.tempoCalcBpm.textContent = `(${calcBpm} BPM)`;
+        }
         if (elements.metroPulseBar) {
             elements.metroPulseBar.style.width = s.state === 'playing' ? `${Math.min(100, Math.max(0, beatFraction * 100))}%` : '0%';
         }

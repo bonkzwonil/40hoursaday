@@ -8,6 +8,7 @@ Handles accurate MIDI playback, real-time speed adjustment,
 seeking, looping, metronome count-in, and ALSA/MIDI output.
 """
 
+import bisect
 import json
 import math
 import os
@@ -43,6 +44,8 @@ class MidiPlayer:
         self.bpm: float = 120.0
         self.time_signature: Tuple[int, int] = (4, 4)
         self.events: List[Tuple[float, mido.Message]] = []
+        self.beat_map: List[Dict[str, Any]] = []
+        self.beat_times: List[float] = []
 
         # Playback Controls
         self.speed: float = 1.0  # 0.10 to 2.00 (10% to 200%)
@@ -187,6 +190,115 @@ class MidiPlayer:
             return True
         return False
 
+    @staticmethod
+    def _build_beat_map(mid: mido.MidiFile) -> Tuple[List[Dict[str, Any]], List[float]]:
+        """Extracts exact musical bars, beats, and tempo changes across the entire piece."""
+        tpb = mid.ticks_per_beat or 480
+        
+        tempo_events = []      # (abs_tick, tempo_us)
+        time_sig_events = []   # (abs_tick, num, den)
+        
+        max_tick = 0
+        for track in mid.tracks:
+            abs_tick = 0
+            for msg in track:
+                abs_tick += msg.time
+                if msg.type == 'set_tempo':
+                    tempo_events.append((abs_tick, msg.tempo))
+                elif msg.type == 'time_signature':
+                    time_sig_events.append((abs_tick, msg.numerator, msg.denominator))
+            if abs_tick > max_tick:
+                max_tick = abs_tick
+                
+        tempo_events.sort(key=lambda x: x[0])
+        time_sig_events.sort(key=lambda x: x[0])
+        
+        # Deduplicate events at the same tick (keep last)
+        def _dedup(events):
+            d = {}
+            for ev in events:
+                d[ev[0]] = ev[1:]
+            return sorted([(k, *v) for k, v in d.items()], key=lambda x: x[0])
+            
+        tempo_events = _dedup(tempo_events)
+        time_sig_events = _dedup(time_sig_events)
+        
+        if not tempo_events or tempo_events[0][0] > 0:
+            tempo_events.insert(0, (0, 500000))
+        if not time_sig_events or time_sig_events[0][0] > 0:
+            time_sig_events.insert(0, (0, 4, 4))
+            
+        # Build tempo segments for tick -> seconds piecewise conversion
+        tempo_segments = []
+        curr_time = 0.0
+        for i in range(len(tempo_events)):
+            start_tick, tempo = tempo_events[i]
+            next_tick = tempo_events[i+1][0] if i+1 < len(tempo_events) else max_tick + tpb * 100
+            tempo_segments.append((start_tick, next_tick, curr_time, tempo))
+            delta_ticks = next_tick - start_tick
+            curr_time += (delta_ticks * tempo) / (tpb * 1_000_000.0)
+            
+        def tick_to_time(tick):
+            for start_tick, next_tick, start_time, tempo in tempo_segments:
+                if start_tick <= tick < next_tick:
+                    dtick = tick - start_tick
+                    return start_time + (dtick * tempo) / (tpb * 1_000_000.0)
+            last = tempo_segments[-1]
+            dtick = tick - last[0]
+            return last[2] + (dtick * last[3]) / (tpb * 1_000_000.0)
+
+        def get_tempo_at_tick(tick):
+            for start_tick, next_tick, start_time, tempo in tempo_segments:
+                if start_tick <= tick < next_tick:
+                    return tempo
+            return tempo_segments[-1][3]
+
+        beat_map = []
+        current_bar = 1
+        for i in range(len(time_sig_events)):
+            start_tick, num, den = time_sig_events[i]
+            next_tick = time_sig_events[i+1][0] if i+1 < len(time_sig_events) else max_tick + tpb * 10
+            
+            ticks_per_beat_unit = int(round(tpb * (4.0 / den)))
+            ticks_per_bar = num * ticks_per_beat_unit
+            
+            t = start_tick
+            while t < next_tick:
+                delta_from_section = t - start_tick
+                bar_offset = delta_from_section // ticks_per_bar
+                bar_tick_rem = delta_from_section % ticks_per_bar
+                beat_in_bar = (bar_tick_rem // ticks_per_beat_unit) + 1
+                
+                bar_num = current_bar + bar_offset
+                time_sec = tick_to_time(t)
+                tempo_us = get_tempo_at_tick(t)
+                bpm = round(mido.tempo2bpm(tempo_us), 1)
+                time_sig_str = f'{num}/{den}'
+                
+                next_beat_time = tick_to_time(t + ticks_per_beat_unit)
+                beat_dur = max(0.001, next_beat_time - time_sec)
+                
+                beat_map.append({
+                    'time': round(time_sec, 4),
+                    'bar': bar_num,
+                    'beat': beat_in_bar,
+                    'beats_per_bar': num,
+                    'bpm': bpm,
+                    'time_sig': time_sig_str,
+                    'time_sig_num': num,
+                    'time_sig_den': den,
+                    'duration': round(beat_dur, 4)
+                })
+                
+                t += ticks_per_beat_unit
+                
+            section_ticks = next_tick - start_tick
+            bars_in_section = (section_ticks + ticks_per_bar - 1) // ticks_per_bar
+            current_bar += bars_in_section
+            
+        beat_times = [b['time'] for b in beat_map]
+        return beat_map, beat_times
+
     def load_file(self, filepath: str) -> bool:
         """Loads and parses a MIDI file."""
         if not os.path.isfile(filepath):
@@ -194,21 +306,9 @@ class MidiPlayer:
 
         try:
             mid = mido.MidiFile(filepath)
+            beat_map, beat_times = self._build_beat_map(mid)
             events = []
             current_time = 0.0
-            
-            initial_tempo = 500000  # Default 120 bpm (500000 us/beat)
-            numerator = 4
-            denominator = 4
-
-            # Scan tracks for meta tempo/time sig
-            for track in mid.tracks:
-                for msg in track:
-                    if msg.type == 'set_tempo':
-                        initial_tempo = msg.tempo
-                    elif msg.type == 'time_signature':
-                        numerator = msg.numerator
-                        denominator = msg.denominator
 
             # Flatten playback events with absolute seconds
             for msg in mid:
@@ -216,13 +316,18 @@ class MidiPlayer:
                 if not msg.is_meta:
                     events.append((current_time, msg.copy()))
 
+            initial_bpm = beat_map[0]['bpm'] if beat_map else 120.0
+            initial_sig = (beat_map[0]['time_sig_num'], beat_map[0]['time_sig_den']) if beat_map else (4, 4)
+
             with self.lock:
                 self.current_filepath = filepath
                 self.current_filename = os.path.basename(filepath)
                 self.duration = current_time
-                self.bpm = round(mido.tempo2bpm(initial_tempo), 1)
-                self.time_signature = (numerator, denominator)
+                self.bpm = initial_bpm
+                self.time_signature = initial_sig
                 self.events = events
+                self.beat_map = beat_map
+                self.beat_times = beat_times
                 self.position = 0.0
                 self.state = "idle"
 
@@ -431,20 +536,34 @@ class MidiPlayer:
         except Exception as e:
             print(f"[MidiPlayer] Panic error: {e}")
 
-    def get_bar_beat(self, pos: Optional[float] = None) -> Tuple[int, int, float, int]:
-        """Calculates (bar, beat, beat_fraction, beats_per_bar) for a given song position."""
+    def get_bar_beat(self, pos: Optional[float] = None) -> Tuple[int, int, float, int, float, str, int, int]:
+        """Calculates (bar, beat, beat_fraction, beats_per_bar, bpm, time_signature, time_sig_num, time_sig_den) for a given song position."""
         if pos is None:
             pos = self.position
-        
-        beats_per_bar = max(1, self.time_signature[0])
-        effective_bpm = max(10.0, self.bpm)
-        sec_per_beat = 60.0 / effective_bpm
-        
-        total_beats = pos / sec_per_beat if sec_per_beat > 0 else 0.0
-        bar = int(math.floor(total_beats / beats_per_bar)) + 1
-        beat = int(math.floor(total_beats % beats_per_bar)) + 1
-        beat_fraction = total_beats % 1.0
-        return (bar, beat, round(beat_fraction, 3), beats_per_bar)
+
+        if not self.beat_map or not self.beat_times:
+            beats_per_bar = max(1, self.time_signature[0])
+            effective_bpm = max(10.0, self.bpm)
+            sec_per_beat = 60.0 / effective_bpm
+            total_beats = pos / sec_per_beat if sec_per_beat > 0 else 0.0
+            bar = int(math.floor(total_beats / beats_per_bar)) + 1
+            beat = int(math.floor(total_beats % beats_per_bar)) + 1
+            beat_fraction = total_beats % 1.0
+            return (bar, beat, round(beat_fraction, 3), beats_per_bar, self.bpm, f"{self.time_signature[0]}/{self.time_signature[1]}", self.time_signature[0], self.time_signature[1])
+
+        idx = bisect.bisect_right(self.beat_times, pos) - 1
+        if idx < 0:
+            b = self.beat_map[0]
+            return (b['bar'], b['beat'], 0.0, b['beats_per_bar'], b['bpm'], b['time_sig'], b['time_sig_num'], b['time_sig_den'])
+
+        if idx >= len(self.beat_map):
+            b = self.beat_map[-1]
+            return (b['bar'], b['beat'], 1.0, b['beats_per_bar'], b['bpm'], b['time_sig'], b['time_sig_num'], b['time_sig_den'])
+
+        b = self.beat_map[idx]
+        elapsed = pos - b['time']
+        beat_fraction = min(1.0, max(0.0, elapsed / max(0.001, b['duration'])))
+        return (b['bar'], b['beat'], round(beat_fraction, 3), b['beats_per_bar'], b['bpm'], b['time_sig'], b['time_sig_num'], b['time_sig_den'])
 
     def _update_position_unlocked(self):
         """Internal helper to calculate real-time position."""
@@ -457,7 +576,7 @@ class MidiPlayer:
         with self.lock:
             self._update_position_unlocked()
             available = self.get_available_ports()
-            bar, beat, beat_fraction, beats_per_bar = self.get_bar_beat(self.position)
+            bar, beat, beat_fraction, beats_per_bar, live_bpm, live_time_sig, time_sig_num, time_sig_den = self.get_bar_beat(self.position)
             return {
                 "state": self.state,
                 "filename": self.current_filename,
@@ -478,16 +597,17 @@ class MidiPlayer:
                 "beat": beat,
                 "beat_fraction": beat_fraction,
                 "beats_per_bar": beats_per_bar,
-                "time_sig_num": self.time_signature[0],
-                "time_sig_den": self.time_signature[1],
+                "time_sig_num": time_sig_num,
+                "time_sig_den": time_sig_den,
                 "muted_channels": [ch + 1 for ch in sorted(self.muted_channels)],
                 "channel_volumes": {ch + 1: int(round(self.channel_volumes.get(ch, 1.0) * 100)) for ch in range(10)},
                 "port": self.target_port_name,
                 "available_ports": available,
                 "allow_program_change": self.is_program_change_allowed_for_port(self.target_port_name),
                 "port_program_changes": {p: self.is_program_change_allowed_for_port(p) for p in available},
-                "bpm": self.bpm,
-                "time_signature": f"{self.time_signature[0]}/{self.time_signature[1]}"
+                "bpm": live_bpm,
+                "time_signature": live_time_sig,
+                "beat_map": self.beat_map
             }
 
     def _play_count_in(self, port) -> bool:
