@@ -115,6 +115,37 @@
                 </div>
             </div>
 
+            <!-- MIDI Volume Section -->
+            <div class="volume-card">
+                <div class="volume-header">
+                    <div class="volume-title-group">
+                        <button id="btn-volume-mute" class="volume-icon-btn" title="Mute / Unmute" aria-label="Mute / Unmute">
+                            <span id="volume-icon">🔊</span>
+                        </button>
+                        <span class="volume-title" data-i18n="midiVolume">MIDI VOLUME</span>
+                    </div>
+                    <div class="volume-value-group">
+                        <span class="volume-percent" id="volume-percent-text">100%</span>
+                    </div>
+                </div>
+
+                <!-- Volume Slider -->
+                <div class="slider-row">
+                    <span class="slider-bound">0%</span>
+                    <input type="range" id="volume-slider" min="0" max="100" value="100" step="1" class="volume-range" aria-label="MIDI Volume Slider">
+                    <span class="slider-bound">100%</span>
+                </div>
+
+                <!-- Volume Presets -->
+                <div class="volume-presets">
+                    <button class="preset-pill vol-preset" data-volume="0.00">0%</button>
+                    <button class="preset-pill vol-preset" data-volume="0.25">25%</button>
+                    <button class="preset-pill vol-preset" data-volume="0.50">50%</button>
+                    <button class="preset-pill vol-preset" data-volume="0.75">75%</button>
+                    <button class="preset-pill vol-preset active" data-volume="1.00">100%</button>
+                </div>
+            </div>
+
             <!-- Tempo / Speed Section -->
             <div class="tempo-card">
                 <div class="tempo-header">

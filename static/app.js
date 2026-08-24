@@ -27,6 +27,7 @@
             countin1Bar: "1 Bar",
             countin2Bars: "2 Bars",
             keyTranspose: "Key:",
+            midiVolume: "MIDI VOLUME",
             practiceTempo: "PRACTICE TEMPO",
             piecesTitle: "Practice Pieces",
             piecesCount: "{n} Pieces",
@@ -44,6 +45,7 @@
             toastCountinOff: "Count-in OFF",
             toastPanic: "🚨 MIDI Reset sent!",
             toastPort: "MIDI Port: {port}",
+            toastVolume: "MIDI Volume: {vol}%",
             toastUploading: "Uploading {file}...",
             toastUploadSuccess: "✅ \"{title}\" added!",
             toastUploadError: "Upload failed: {error}",
@@ -79,6 +81,7 @@
             countin1Bar: "1 Takt",
             countin2Bars: "2 Takte",
             keyTranspose: "Tonart:",
+            midiVolume: "MIDI LAUTSTÄRKE",
             practiceTempo: "ÜBUNGSTEMPO",
             piecesTitle: "Übungsstücke",
             piecesCount: "{n} Stücke",
@@ -96,6 +99,7 @@
             toastCountinOff: "Einzähler AUS",
             toastPanic: "🚨 MIDI Reset gesendet!",
             toastPort: "MIDI Port: {port}",
+            toastVolume: "MIDI-Lautstärke: {vol}%",
             toastUploading: "Lade {file} hoch...",
             toastUploadSuccess: "✅ \"{title}\" hinzugefügt!",
             toastUploadError: "Upload-Fehler: {error}",
@@ -133,6 +137,8 @@
             duration: 0,
             speed: 1.0,
             speed_percent: 100,
+            volume: 1.0,
+            volume_percent: 100,
             loop: false,
             transpose: 0,
             count_in_bars: 0,
@@ -176,6 +182,12 @@
         btnTransDown: document.getElementById('btn-trans-down'),
         btnTransUp: document.getElementById('btn-trans-up'),
         
+        volumePercentText: document.getElementById('volume-percent-text'),
+        volumeSlider: document.getElementById('volume-slider'),
+        btnVolumeMute: document.getElementById('btn-volume-mute'),
+        volumeIcon: document.getElementById('volume-icon'),
+        volumePresetPills: document.querySelectorAll('.vol-preset'),
+
         tempoPercentText: document.getElementById('tempo-percent-text'),
         tempoCalcBpm: document.getElementById('tempo-calc-bpm'),
         tempoSlider: document.getElementById('tempo-slider'),
@@ -184,7 +196,7 @@
         btnTempo100: document.getElementById('btn-tempo-100'),
         btnTempoP1: document.getElementById('btn-tempo-p1'),
         btnTempoP5: document.getElementById('btn-tempo-p5'),
-        presetPills: document.querySelectorAll('.preset-pill'),
+        presetPills: document.querySelectorAll('.preset-pill:not(.vol-preset)'),
         
         trackList: document.getElementById('track-list'),
         trackCount: document.getElementById('track-count'),
@@ -366,6 +378,31 @@
 
         // Transpose
         elements.transposeBadge.textContent = s.transpose > 0 ? `+${s.transpose}` : `${s.transpose || 0}`;
+
+        // Volume
+        const volPct = Math.round((s.volume !== undefined ? s.volume : 1.0) * 100);
+        if (elements.volumePercentText) {
+            elements.volumePercentText.textContent = `${volPct}%`;
+        }
+        if (elements.volumeSlider && document.activeElement !== elements.volumeSlider) {
+            elements.volumeSlider.value = volPct;
+        }
+        if (elements.volumeIcon) {
+            if (volPct === 0) elements.volumeIcon.textContent = '🔇';
+            else if (volPct < 35) elements.volumeIcon.textContent = '🔈';
+            else if (volPct < 75) elements.volumeIcon.textContent = '🔉';
+            else elements.volumeIcon.textContent = '🔊';
+        }
+        if (elements.volumePresetPills) {
+            elements.volumePresetPills.forEach(pill => {
+                const pillPct = Math.round(parseFloat(pill.dataset.volume) * 100);
+                if (pillPct === volPct) {
+                    pill.classList.add('active');
+                } else {
+                    pill.classList.remove('active');
+                }
+            });
+        }
 
         // Tempo
         const pct = Math.round((s.speed || 1.0) * 100);
@@ -554,6 +591,7 @@
         const res = await apiPost('play', {
             file: filepath,
             speed: state.status.speed,
+            volume: state.status.volume,
             port: currentPort,
             loop: state.status.loop,
             count_in: state.status.count_in_bars,
@@ -584,6 +622,24 @@
     async function stopPlayback() {
         const res = await apiPost('stop');
         if (res.status) updateUI(res.status);
+    }
+
+    let volumeDebounceTimer = null;
+    let lastNonZeroVolume = 1.0;
+    function setVolumePercent(pct) {
+        pct = Math.max(0, Math.min(100, Math.round(pct)));
+        const volume = pct / 100.0;
+        if (volume > 0) {
+            lastNonZeroVolume = volume;
+        }
+        state.status.volume = volume;
+        state.status.volume_percent = pct;
+        updateUI({ volume, volume_percent: pct });
+
+        clearTimeout(volumeDebounceTimer);
+        volumeDebounceTimer = setTimeout(async () => {
+            await apiPost('volume', { volume });
+        }, 50);
     }
 
     let tempoDebounceTimer = null;
@@ -690,6 +746,35 @@
                     updateUI(res.status);
                 }
                 showToast(newAllowed ? "Program Change: ALLOWED (Instrument switching enabled)" : "Program Change: BLOCKED (Preset protected)");
+            });
+        }
+
+        // Volume Slider
+        if (elements.volumeSlider) {
+            elements.volumeSlider.addEventListener('input', (e) => {
+                setVolumePercent(parseFloat(e.target.value));
+            });
+        }
+
+        // Volume Mute Button
+        if (elements.btnVolumeMute) {
+            elements.btnVolumeMute.addEventListener('click', () => {
+                if ((state.status.volume || 1.0) > 0) {
+                    lastNonZeroVolume = state.status.volume || 1.0;
+                    setVolumePercent(0);
+                } else {
+                    setVolumePercent(Math.round((lastNonZeroVolume || 1.0) * 100));
+                }
+            });
+        }
+
+        // Volume Presets
+        if (elements.volumePresetPills) {
+            elements.volumePresetPills.forEach(pill => {
+                pill.addEventListener('click', () => {
+                    const vol = parseFloat(pill.dataset.volume);
+                    setVolumePercent(vol * 100);
+                });
             });
         }
 

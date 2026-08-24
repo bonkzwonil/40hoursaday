@@ -486,6 +486,106 @@ body {
     font-size: 0.72rem;
 }
 
+/* Volume Card */
+.volume-card {
+    background: var(--bg-input);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.volume-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.volume-title-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.volume-icon-btn {
+    background: transparent;
+    border: none;
+    font-size: 1.15rem;
+    cursor: pointer;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.15s ease;
+}
+
+.volume-icon-btn:hover {
+    transform: scale(1.15);
+}
+
+.volume-title {
+    font-size: 0.75rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+}
+
+.volume-value-group {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+}
+
+.volume-percent {
+    font-size: 1.35rem;
+    font-weight: 800;
+    color: var(--primary);
+    text-shadow: 0 0 10px var(--primary-glow);
+    font-variant-numeric: tabular-nums;
+}
+
+.volume-range {
+    flex: 1;
+    -webkit-appearance: none;
+    height: 10px;
+    border-radius: var(--radius-full);
+    background: var(--bg-card-sub);
+    outline: none;
+    cursor: pointer;
+}
+
+.volume-range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--primary), #c084fc);
+    box-shadow: 0 0 10px var(--primary-glow);
+    cursor: pointer;
+    border: 2px solid #fff;
+    transition: transform 0.1s;
+}
+
+.volume-range::-webkit-slider-thumb:active {
+    transform: scale(1.15);
+}
+
+.volume-presets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.preset-pill.vol-preset.active {
+    background: var(--primary);
+    color: #fff;
+    font-weight: 800;
+    box-shadow: 0 0 10px var(--primary-glow);
+    border-color: transparent;
+}
+
 /* Tempo Card */
 .tempo-card {
     background: var(--bg-input);

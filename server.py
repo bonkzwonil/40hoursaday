@@ -149,6 +149,7 @@ class PracticePartnerHandler(SimpleHTTPRequestHandler):
             body = self._parse_json_body() or {}
             filepath = body.get("file")
             speed = body.get("speed")
+            volume = body.get("volume")
             port = body.get("port")
             clean_port = str(port).strip() if port and str(port).strip() else None
             loop = body.get("loop")
@@ -158,6 +159,7 @@ class PracticePartnerHandler(SimpleHTTPRequestHandler):
             ok = self.player.play(
                 filepath=filepath,
                 speed=speed,
+                volume=volume,
                 port=clean_port,
                 loop=loop,
                 count_in=count_in,
@@ -191,6 +193,16 @@ class PracticePartnerHandler(SimpleHTTPRequestHandler):
                 self._send_error("Missing 'speed' parameter")
                 return
             self.player.set_speed(float(speed))
+            self._send_json({"success": True, "status": self.player.get_status()})
+            return
+
+        if path == "/api/volume":
+            body = self._parse_json_body() or {}
+            volume = body.get("volume")
+            if volume is None:
+                self._send_error("Missing 'volume' parameter")
+                return
+            self.player.set_volume(float(volume))
             self._send_json({"success": True, "status": self.player.get_status()})
             return
 

@@ -46,6 +46,7 @@ class MidiPlayer:
 
         # Playback Controls
         self.speed: float = 1.0  # 0.10 to 2.00 (10% to 200%)
+        self.volume: float = 1.0  # 0.0 to 1.0 (0% to 100% velocity scale)
         self.position: float = 0.0  # Current position in original song seconds
         self.loop: bool = False
         self.transpose: int = 0  # Semitone shift (-12 to +12)
@@ -227,7 +228,8 @@ class MidiPlayer:
 
     def play(self, filepath: Optional[str] = None, speed: Optional[float] = None, 
              port: Optional[str] = None, loop: Optional[bool] = None, 
-             count_in: Optional[int] = None, transpose: Optional[int] = None) -> bool:
+             count_in: Optional[int] = None, transpose: Optional[int] = None,
+             volume: Optional[float] = None) -> bool:
         """Starts playback with optional parameters."""
         self.stop()
 
@@ -244,6 +246,11 @@ class MidiPlayer:
         with self.lock:
             if speed is not None:
                 self.speed = max(0.10, min(3.0, float(speed)))
+            if volume is not None:
+                v = float(volume)
+                if v > 1.0:
+                    v = v / 100.0
+                self.volume = max(0.0, min(1.0, v))
             if loop is not None:
                 self.loop = bool(loop)
             if count_in is not None:
@@ -303,6 +310,14 @@ class MidiPlayer:
             self.speed = speed
             self._wake_event.set()
 
+    def set_volume(self, volume: float):
+        """Live updates playback volume (note velocity scaling)."""
+        v = float(volume)
+        if v > 1.0:
+            v = v / 100.0
+        with self.lock:
+            self.volume = max(0.0, min(1.0, v))
+
     def seek(self, position_seconds: float):
         """Seeks to a specific position in seconds."""
         with self.lock:
@@ -360,6 +375,8 @@ class MidiPlayer:
                 "duration": round(self.duration, 2),
                 "speed": round(self.speed, 2),
                 "speed_percent": int(round(self.speed * 100)),
+                "volume": round(self.volume, 2),
+                "volume_percent": int(round(self.volume * 100)),
                 "loop": self.loop,
                 "transpose": self.transpose,
                 "count_in_bars": self.count_in_bars,
@@ -386,11 +403,13 @@ class MidiPlayer:
 
             with self.lock:
                 current_speed = self.speed
+                current_volume = self.volume
 
             beat_duration = base_beat_duration / current_speed
             is_accent = (beat % beats_per_bar == 0)
             note = 76 if is_accent else 77  # GM Woodblock
-            vel = 110 if is_accent else 85
+            base_vel = 110 if is_accent else 85
+            vel = 0 if current_volume <= 0 else max(1, min(127, int(round(base_vel * current_volume))))
 
             try:
                 port.send(mido.Message('note_on', channel=9, note=note, velocity=vel))
@@ -529,6 +548,11 @@ class MidiPlayer:
                             if getattr(msg_to_send, 'channel', 0) != 9:
                                 new_note = max(0, min(127, msg_to_send.note + self.transpose))
                                 msg_to_send.note = new_note
+                        if msg_to_send.type == 'note_on' and getattr(msg_to_send, 'velocity', 0) > 0:
+                            if self.volume <= 0.0:
+                                msg_to_send.velocity = 0
+                            else:
+                                msg_to_send.velocity = max(1, min(127, int(round(msg_to_send.velocity * self.volume))))
                         self.position = event_t
 
                     # Per-device Program Change & Bank Select filter
