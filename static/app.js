@@ -61,6 +61,10 @@
             midiChannelsMute: "MIDI CHANNELS (CH 1–10)",
             resetVolumes: "Reset 100%",
             unmuteAll: "Unmute All",
+            toastBarOffset: "Barlines shifted {beats} beat(s)",
+            toastPickupZero: "Pickup bar = 0, first full bar = 1",
+            toastPickupOne: "Pickup bar counts as bar 1",
+            toastMeterReset: "Meter and barlines back to the file",
             barLabel: "BAR",
             beatLabel: "BEAT",
             mixerOutputs: "OUTPUT (MASTER)",
@@ -127,6 +131,10 @@
             midiChannelsMute: "MIDI-KANÄLE (CH 1–10)",
             resetVolumes: "Auf 100% zurücksetzen",
             unmuteAll: "Alle aktivieren",
+            toastBarOffset: "Taktstriche um {beats} Schlag(e) verschoben",
+            toastPickupZero: "Auftakt = 0, erster voller Takt = 1",
+            toastPickupOne: "Auftakt zählt als Takt 1",
+            toastMeterReset: "Taktart und Taktstriche wie in der Datei",
             barLabel: "TAKT",
             beatLabel: "SCHLAG",
             mixerOutputs: "AUSGANG (MASTER)",
@@ -207,6 +215,9 @@
         
         // Metronome Deck
         metroDeck: document.getElementById('metronome-deck'),
+        metroOffsetGroup: document.getElementById('metro-offset-group'),
+        metroOffsetVal: document.getElementById('metro-offset-val'),
+        metroPickupChip: document.getElementById('metro-pickup-chip'),
         metroBarVal: document.getElementById('metro-bar-val'),
         metroBeatVal: document.getElementById('metro-beat-val'),
         metroBeatSub: document.getElementById('metro-beat-sub'),
@@ -442,6 +453,24 @@
                     btn.classList.remove('active');
                 }
             });
+        }
+
+        if (elements.metroOffsetVal) {
+            const off = s.grid_offset_beats || 0;
+            elements.metroOffsetVal.textContent = off ? (off > 0 ? `+${off}` : `${off}`) : '0';
+            elements.metroOffsetVal.classList.toggle('shifted', !!off || !!s.custom_meter);
+        }
+
+        // Auftakt numbering. Only meaningful when the piece actually has a pickup,
+        // so the chip dims itself rather than pretending to do something.
+        if (elements.metroPickupChip) {
+            const zero = s.pickup_bar_zero !== false;
+            elements.metroPickupChip.textContent = zero ? 'A:0' : 'A:1';
+            elements.metroPickupChip.title = zero
+                ? 'Pickup bar is 0, first full bar is 1 (score convention)'
+                : 'Pickup bar counts as bar 1';
+            elements.metroPickupChip.classList.toggle('active', !zero);
+            elements.metroPickupChip.classList.toggle('chip-dim', !s.has_pickup);
         }
 
         if (elements.metroMultGroup && s.meter_multiplier !== undefined) {
@@ -874,6 +903,39 @@
                     const res = await apiPost('meter', { numerator: num, denominator: den });
                     if (res && res.status) updateUI(res.status);
                     showToast(`Taktart: ${num}/${den}`);
+                });
+            });
+        }
+
+        // Barline nudge. A recorded performance often does not start its first bar
+        // on tick 0, and no amount of analysis can guess where the conductor was -
+        // so let the player slide the grid until the count sits on the music.
+        if (elements.metroOffsetGroup) {
+            elements.metroOffsetGroup.querySelectorAll('[data-offset]').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    const step = parseFloat(btn.dataset.offset);
+                    const beatsPerBar = state.status.beats_per_bar || 4;
+                    let next = (state.status.grid_offset_beats || 0) + step;
+                    // one full bar of shift is the same grid again
+                    next = ((next % beatsPerBar) + beatsPerBar) % beatsPerBar;
+                    const res = await apiPost('meter', { offset_beats: next });
+                    if (res && res.status) updateUI(res.status);
+                    showToast(t('toastBarOffset', { beats: next }));
+                });
+            });
+            elements.metroOffsetGroup.querySelectorAll('[data-pickup-toggle]').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    const next = !(state.status.pickup_bar_zero !== false);
+                    const res = await apiPost('meter', { pickup_bar_zero: next });
+                    if (res && res.status) updateUI(res.status);
+                    showToast(next ? t('toastPickupZero') : t('toastPickupOne'));
+                });
+            });
+            elements.metroOffsetGroup.querySelectorAll('[data-meter-reset]').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    const res = await apiPost('meter', { reset: true });
+                    if (res && res.status) updateUI(res.status);
+                    showToast(t('toastMeterReset'));
                 });
             });
         }
@@ -1449,23 +1511,38 @@
     }
 
     // 60 FPS Flashing Metronome & Bar Counter Animation Engine
-    let lastRenderedBeatsPerBar = 0;
+    let lastRenderedBeatsPerBar = '';
     let lastFlashedKey = '';
     let flashTimer = null;
     let playbackBaseSongPos = 0;
     let playbackBaseWallTime = performance.now();
     let isPlaybackClockRunning = false;
 
-    function renderMetronomeDots(beatsPerBar) {
+    // Beats that carry a natural accent. Compound meters group their eighths in
+    // threes, so 6/8 is felt in 2 and 9/8 in 3 - not as six or nine equal beats.
+    function strongBeats(num, den) {
+        const s = new Set([1]);
+        if (den >= 8 && num % 3 === 0 && [6, 9, 12].includes(num)) {
+            for (let i = 1; i <= num; i += 3) s.add(i);
+        } else if (num === 4) {
+            s.add(3);
+        }
+        return s;
+    }
+
+    function renderMetronomeDots(beatsPerBar, den) {
         if (!elements.metroDotsRow) return;
         beatsPerBar = Math.max(1, beatsPerBar || 4);
-        if (lastRenderedBeatsPerBar === beatsPerBar) return;
-        lastRenderedBeatsPerBar = beatsPerBar;
+        den = den || 4;
+        const key = `${beatsPerBar}/${den}`;
+        if (lastRenderedBeatsPerBar === key) return;
+        lastRenderedBeatsPerBar = key;
 
+        const strong = strongBeats(beatsPerBar, den);
         let html = '';
         for (let b = 1; b <= beatsPerBar; b++) {
-            const isAccent = (b === 1);
-            html += `<span class="metro-dot ${isAccent ? 'dot-accent' : ''}" data-beat="${b}"></span>`;
+            const cls = b === 1 ? 'dot-accent' : (strong.has(b) ? 'dot-strong' : '');
+            html += `<span class="metro-dot ${cls}" data-beat="${b}"></span>`;
         }
         elements.metroDotsRow.innerHTML = html;
     }
@@ -1496,6 +1573,9 @@
         let currentBeat = s.beat || 1;
         let beatFraction = s.beat_fraction || 0.0;
         let currentBpm = s.bpm || 120;
+        let currentDen = s.time_sig_den || 4;
+        let isAccent = s.accent !== undefined ? s.accent : (currentBeat === 1);
+        let isDownbeat = s.downbeat !== undefined ? s.downbeat : (currentBeat === 1);
 
         // Smooth monotonic 60fps interpolation with exact piece tempo map
         if (s.state === 'playing' && !s.count_in_active) {
@@ -1520,6 +1600,11 @@
                 currentBeat = b.beat;
                 beatsPerBar = b.beats_per_bar;
                 currentBpm = b.bpm;
+                currentDen = b.time_sig_den || currentDen;
+                isAccent = b.accent !== undefined ? b.accent : (b.beat === 1);
+                isDownbeat = b.downbeat !== undefined ? b.downbeat : (b.beat === 1);
+                // Each beat is measured against its own length, so the pulse stays
+                // locked to the music through an accelerando or a ritardando.
                 const elapsedInBeat = currentPos - b.time;
                 beatFraction = Math.min(1.0, Math.max(0.0, elapsedInBeat / Math.max(0.001, b.duration)));
             } else {
@@ -1529,19 +1614,28 @@
                 currentBar = Math.floor(totalBeats / beatsPerBar) + 1;
                 currentBeat = (Math.floor(totalBeats) % beatsPerBar) + 1;
                 beatFraction = totalBeats % 1.0;
+                isDownbeat = currentBeat === 1;
+                isAccent = strongBeats(beatsPerBar, currentDen).has(currentBeat);
             }
         }
 
-        renderMetronomeDots(beatsPerBar);
+        renderMetronomeDots(beatsPerBar, currentDen);
 
         // Update Counter Display & Live Tempo
         if (elements.metroBarVal) elements.metroBarVal.textContent = currentBar;
         if (elements.metroBeatVal) elements.metroBeatVal.textContent = currentBeat;
         if (elements.metroBeatSub) elements.metroBeatSub.textContent = `/ ${beatsPerBar}`;
         if (elements.trackMeter && s.time_signature) elements.trackMeter.textContent = s.time_signature;
-        if (elements.trackBpm && currentBpm) elements.trackBpm.textContent = `${Math.round(currentBpm)} BPM`;
-        if (elements.tempoCalcBpm && currentBpm) {
-            const calcBpm = Math.round(currentBpm * (s.speed || 1.0));
+        // Files whose tempo map records a human performance carry a set_tempo on
+        // every beat; their live tempo swings so hard it is unreadable, so those
+        // show the piece's settled tempo instead. Files with real tempo marks show
+        // the live one, because an accelerando is something you want to watch.
+        const displayBpm = (s.expressive_tempo || s.state !== 'playing')
+            ? (s.nominal_bpm || currentBpm)
+            : (currentBpm || s.nominal_bpm);
+        if (elements.trackBpm && displayBpm) elements.trackBpm.textContent = `${Math.round(displayBpm)} BPM`;
+        if (elements.tempoCalcBpm && displayBpm) {
+            const calcBpm = Math.round(displayBpm * (s.speed || 1.0));
             elements.tempoCalcBpm.textContent = `(${calcBpm} BPM)`;
         }
         if (elements.metroPulseBar) {
@@ -1556,17 +1650,15 @@
                 if (elements.metroDeck) {
                     clearTimeout(flashTimer);
                     elements.metroDeck.classList.remove('flash-accent', 'flash-beat');
-                    if (currentBeat === 1) {
-                        elements.metroDeck.classList.add('flash-accent');
-                        flashTimer = setTimeout(() => {
-                            if (elements.metroDeck) elements.metroDeck.classList.remove('flash-accent');
-                        }, 130);
-                    } else {
-                        elements.metroDeck.classList.add('flash-beat');
-                        flashTimer = setTimeout(() => {
-                            if (elements.metroDeck) elements.metroDeck.classList.remove('flash-beat');
-                        }, 90);
-                    }
+                    // The downbeat gets the strongest flash, a secondary strong beat
+                    // (the 4th eighth of a 6/8 bar, the 3rd beat of a 4/4 bar) a
+                    // shorter one, everything else the plain beat flash.
+                    const cls = isAccent ? 'flash-accent' : 'flash-beat';
+                    const hold = isDownbeat ? 130 : (isAccent ? 105 : 90);
+                    elements.metroDeck.classList.add(cls);
+                    flashTimer = setTimeout(() => {
+                        if (elements.metroDeck) elements.metroDeck.classList.remove(cls);
+                    }, hold);
                 }
             }
         } else {
@@ -1579,7 +1671,7 @@
             elements.metroDotsRow.querySelectorAll('.metro-dot').forEach(dot => {
                 const b = parseInt(dot.getAttribute('data-beat'), 10);
                 if (b === currentBeat && s.state === 'playing') {
-                    if (b === 1) {
+                    if (isDownbeat) {
                         dot.classList.add('active');
                         dot.classList.remove('beat-active');
                     } else {

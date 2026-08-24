@@ -116,6 +116,14 @@
                         <button type="button" class="metro-chip active" data-mult="1.0" title="Normal 1x beat">1×</button>
                         <button type="button" class="metro-chip" data-mult="2.0" title="Double beat / 2x">2×</button>
                     </div>
+                    <!-- Barline nudge: some files do not put bar 1 on tick 0 -->
+                    <div class="metro-offset-group" id="metro-offset-group">
+                        <button type="button" class="metro-chip" data-offset="-1" title="Move the barlines one beat earlier">◀</button>
+                        <span class="metro-offset-val" id="metro-offset-val" title="Barline offset in beats">0</span>
+                        <button type="button" class="metro-chip" data-offset="1" title="Move the barlines one beat later">▶</button>
+                        <button type="button" class="metro-chip" data-pickup-toggle="1" id="metro-pickup-chip" title="How to number a pickup bar (Auftakt)">A:0</button>
+                        <button type="button" class="metro-chip" data-meter-reset="1" title="Back to the meter and barlines stored in the file">⟲</button>
+                    </div>
                 </div>
             </div>
 

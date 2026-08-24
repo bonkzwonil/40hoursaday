@@ -11,8 +11,14 @@ caching, and file uploads.
 import json
 import os
 import time
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 import mido
+
+from player import MidiPlayer
+
+# Bumped whenever cached metadata is computed differently, so entries written by
+# an older build get recomputed instead of being trusted forever.
+META_VERSION = 2
 
 IGNORED_DIRS = {
     '.git', '.cache', '.local', '.config', '.vscode', '.emacs.d',
@@ -52,6 +58,30 @@ class MidiLibrary:
         os.makedirs(primary, exist_ok=True)
         return primary
 
+    @staticmethod
+    def _analyze(mid: mido.MidiFile) -> Tuple[float, float, str]:
+        """Duration, tempo and meter for the library listing, from one pass.
+
+        This runs the player's own timeline, so the tempo shown in the list is the
+        tempo the transport will show once the file is loaded, instead of whichever
+        track happened to hold the last first-tempo event.
+
+        The duration comes from the same tempo map rather than from mido's
+        MidiFile.length. Both give the identical answer - length is just the last
+        event's timestamp - but length walks every message in the file a second
+        time, which on a slow machine dominates the cost of scanning a library.
+        """
+        beat_map, _ = MidiPlayer._build_beat_map(mid)
+        info = MidiPlayer._extract_timeline(mid)
+        tick_to_time, _tempo_at = MidiPlayer._make_tick_clock(
+            info['tempos'], mid.ticks_per_beat or 480)
+        duration = tick_to_time(info['max_tick'])
+
+        if not beat_map:
+            return duration, 120.0, "4/4"
+        num, den = MidiPlayer._main_time_signature(beat_map)
+        return duration, MidiPlayer._nominal_bpm(beat_map), f"{num}/{den}"
+
     def get_file_metadata(self, filepath: str) -> Dict[str, Any]:
         """Extracts and caches metadata (duration, bpm, size, mtime) for a MIDI file."""
         try:
@@ -61,20 +91,13 @@ class MidiLibrary:
             
             # Check cache
             cached = self._meta_cache.get(filepath)
-            if cached and cached.get("mtime") == mtime:
+            if cached and cached.get("mtime") == mtime and cached.get("meta_version") == META_VERSION:
                 return cached
 
             # Parse with mido
             mid = mido.MidiFile(filepath)
-            duration = round(mid.length, 1)
-            
-            initial_tempo = 500000
-            for track in mid.tracks:
-                for msg in track:
-                    if msg.type == 'set_tempo':
-                        initial_tempo = msg.tempo
-                        break
-            bpm = round(mido.tempo2bpm(initial_tempo), 1)
+            duration, bpm, meter = self._analyze(mid)
+            duration = round(duration, 1)
 
             mins, secs = divmod(int(duration), 60)
             duration_str = f"{mins:02d}:{secs:02d}"
@@ -91,7 +114,9 @@ class MidiLibrary:
                 "mtime_str": time.strftime("%Y-%m-%d %H:%M", time.localtime(mtime)),
                 "duration": duration,
                 "duration_str": duration_str,
-                "bpm": bpm
+                "bpm": bpm,
+                "meter": meter,
+                "meta_version": META_VERSION
             }
             self._meta_cache[filepath] = meta
             return meta
@@ -107,6 +132,8 @@ class MidiLibrary:
                 "duration": 0.0,
                 "duration_str": "--:--",
                 "bpm": 120.0,
+                "meter": "4/4",
+                "meta_version": META_VERSION,
                 "error": str(e)
             }
 
@@ -145,7 +172,8 @@ class MidiLibrary:
                             except OSError:
                                 mtime = 0
 
-                            if cached and cached.get("mtime") == mtime:
+                            if (cached and cached.get("mtime") == mtime
+                                    and cached.get("meta_version") == META_VERSION):
                                 results.append(cached)
                             elif self.lazy_loading:
                                 # Lightweight metadata without parsing binary MIDI events
@@ -160,7 +188,8 @@ class MidiLibrary:
                                     "mtime_str": time.strftime("%Y-%m-%d %H:%M", time.localtime(mtime)) if mtime else "",
                                     "duration": 0.0,
                                     "duration_str": "--:--",
-                                    "bpm": None
+                                    "bpm": None,
+                                    "meter": None
                                 })
                             else:
                                 cache_dirty = True
