@@ -46,6 +46,9 @@ class MidiPlayer:
         self.events: List[Tuple[float, mido.Message]] = []
         self.beat_map: List[Dict[str, Any]] = []
         self.beat_times: List[float] = []
+        self.meter_multiplier: float = 1.0
+        self.custom_time_sig: Optional[Tuple[int, int]] = None
+        self._mid_file_obj: Optional[mido.MidiFile] = None
 
         # Playback Controls
         self.speed: float = 1.0  # 0.10 to 2.00 (10% to 200%)
@@ -191,9 +194,10 @@ class MidiPlayer:
         return False
 
     @staticmethod
-    def _build_beat_map(mid: mido.MidiFile) -> Tuple[List[Dict[str, Any]], List[float]]:
+    def _build_beat_map(mid: mido.MidiFile, custom_num: Optional[int] = None, custom_den: Optional[int] = None, multiplier: float = 1.0) -> Tuple[List[Dict[str, Any]], List[float]]:
         """Extracts exact musical bars, beats, and tempo changes across the entire piece."""
-        tpb = mid.ticks_per_beat or 480
+        base_tpb = mid.ticks_per_beat or 480
+        tpb = base_tpb
         
         tempo_events = []      # (abs_tick, tempo_us)
         time_sig_events = []   # (abs_tick, num, den)
@@ -226,7 +230,9 @@ class MidiPlayer:
         if not tempo_events or tempo_events[0][0] > 0:
             tempo_events.insert(0, (0, 500000))
         if not time_sig_events or time_sig_events[0][0] > 0:
-            time_sig_events.insert(0, (0, 4, 4))
+            time_sig_events.insert(0, (0, custom_num or 4, custom_den or 4))
+        elif custom_num and custom_den:
+            time_sig_events = [(0, custom_num, custom_den)]
             
         # Build tempo segments for tick -> seconds piecewise conversion
         tempo_segments = []
@@ -257,9 +263,11 @@ class MidiPlayer:
         current_bar = 1
         for i in range(len(time_sig_events)):
             start_tick, num, den = time_sig_events[i]
+            if custom_num and custom_den:
+                num, den = custom_num, custom_den
             next_tick = time_sig_events[i+1][0] if i+1 < len(time_sig_events) else max_tick + tpb * 10
             
-            ticks_per_beat_unit = int(round(tpb * (4.0 / den)))
+            ticks_per_beat_unit = max(1, int(round(tpb * (4.0 / den) * multiplier)))
             ticks_per_bar = num * ticks_per_beat_unit
             
             t = start_tick
@@ -272,7 +280,7 @@ class MidiPlayer:
                 bar_num = current_bar + bar_offset
                 time_sec = tick_to_time(t)
                 tempo_us = get_tempo_at_tick(t)
-                bpm = round(mido.tempo2bpm(tempo_us), 1)
+                bpm = round(mido.tempo2bpm(tempo_us) / max(0.1, multiplier), 1)
                 time_sig_str = f'{num}/{den}'
                 
                 next_beat_time = tick_to_time(t + ticks_per_beat_unit)
@@ -306,7 +314,13 @@ class MidiPlayer:
 
         try:
             mid = mido.MidiFile(filepath)
-            beat_map, beat_times = self._build_beat_map(mid)
+            self._mid_file_obj = mid
+            beat_map, beat_times = self._build_beat_map(
+                mid,
+                custom_num=self.time_signature[0] if self.custom_time_sig else None,
+                custom_den=self.time_signature[1] if self.custom_time_sig else None,
+                multiplier=self.meter_multiplier
+            )
             events = []
             current_time = 0.0
 
@@ -324,7 +338,8 @@ class MidiPlayer:
                 self.current_filename = os.path.basename(filepath)
                 self.duration = current_time
                 self.bpm = initial_bpm
-                self.time_signature = initial_sig
+                if not self.custom_time_sig:
+                    self.time_signature = initial_sig
                 self.events = events
                 self.beat_map = beat_map
                 self.beat_times = beat_times
@@ -335,6 +350,24 @@ class MidiPlayer:
         except Exception as e:
             print(f"[MidiPlayer] Error loading file {filepath}: {e}")
             return False
+
+    def set_meter(self, numerator: Optional[int] = None, denominator: Optional[int] = None, multiplier: Optional[float] = None) -> bool:
+        """Sets custom meter or sub-division multiplier and rebuilds beat map immediately."""
+        with self.lock:
+            if numerator is not None and denominator is not None:
+                self.time_signature = (int(numerator), int(denominator))
+                self.custom_time_sig = self.time_signature
+            if multiplier is not None:
+                self.meter_multiplier = max(0.25, min(4.0, float(multiplier)))
+            
+            if self._mid_file_obj:
+                self.beat_map, self.beat_times = self._build_beat_map(
+                    self._mid_file_obj,
+                    custom_num=self.time_signature[0] if self.custom_time_sig else None,
+                    custom_den=self.time_signature[1] if self.custom_time_sig else None,
+                    multiplier=self.meter_multiplier
+                )
+            return True
 
     def play(self, filepath: Optional[str] = None, speed: Optional[float] = None, 
              port: Optional[str] = None, loop: Optional[bool] = None, 
@@ -606,7 +639,9 @@ class MidiPlayer:
                 "allow_program_change": self.is_program_change_allowed_for_port(self.target_port_name),
                 "port_program_changes": {p: self.is_program_change_allowed_for_port(p) for p in available},
                 "bpm": live_bpm,
-                "time_signature": live_time_sig
+                "time_signature": live_time_sig,
+                "meter_multiplier": self.meter_multiplier,
+                "custom_meter": self.custom_time_sig is not None
             }
             if include_beat_map:
                 res["beat_map"] = self.beat_map

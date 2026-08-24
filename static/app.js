@@ -215,6 +215,8 @@
         metroCountinBadge: document.getElementById('metro-countin-badge'),
         metroCountinBeat: document.getElementById('metro-countin-beat'),
         metroCountinTotal: document.getElementById('metro-countin-total'),
+        metroMeterGroup: document.getElementById('metro-meter-group'),
+        metroMultGroup: document.getElementById('metro-mult-group'),
 
         timeCurrent: document.getElementById('time-current'),
         timeTotal: document.getElementById('time-total'),
@@ -437,6 +439,28 @@
             elements.btnLoop.classList.add('active');
         } else {
             elements.btnLoop.classList.remove('active');
+        }
+
+        // Active Meter & Multiplier Chips
+        if (elements.metroMeterGroup && s.time_signature) {
+            elements.metroMeterGroup.querySelectorAll('[data-meter]').forEach(btn => {
+                if (btn.dataset.meter === s.time_signature) {
+                    btn.classList.add('active');
+                } else {
+                    btn.classList.remove('active');
+                }
+            });
+        }
+
+        if (elements.metroMultGroup && s.meter_multiplier !== undefined) {
+            elements.metroMultGroup.querySelectorAll('[data-mult]').forEach(btn => {
+                const btnMult = parseFloat(btn.dataset.mult);
+                if (Math.abs(btnMult - s.meter_multiplier) < 0.05) {
+                    btn.classList.add('active');
+                } else {
+                    btn.classList.remove('active');
+                }
+            });
         }
 
         // Count-in toggle highlight
@@ -847,6 +871,30 @@
         if (elements.volumeSlider) {
             elements.volumeSlider.addEventListener('input', (e) => {
                 setVolumePercent(parseFloat(e.target.value));
+            });
+        }
+
+        // Metronome Meter Selector Chips
+        if (elements.metroMeterGroup) {
+            elements.metroMeterGroup.querySelectorAll('[data-meter]').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    const [num, den] = btn.dataset.meter.split('/').map(v => parseInt(v, 10));
+                    const res = await apiPost('meter', { numerator: num, denominator: den });
+                    if (res && res.status) updateUI(res.status);
+                    showToast(`Taktart: ${num}/${den}`);
+                });
+            });
+        }
+
+        // Metronome Division/Multiplier Chips
+        if (elements.metroMultGroup) {
+            elements.metroMultGroup.querySelectorAll('[data-mult]').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    const mult = parseFloat(btn.dataset.mult);
+                    const res = await apiPost('meter', { multiplier: mult });
+                    if (res && res.status) updateUI(res.status);
+                    showToast(`Beat-Teilung: ${btn.textContent}`);
+                });
             });
         }
 

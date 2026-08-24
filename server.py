@@ -269,6 +269,19 @@ class PracticePartnerHandler(SimpleHTTPRequestHandler):
                 self._send_error("Missing 'channel' or 'volume' parameter")
             return
 
+        if path == "/api/meter":
+            body = self._parse_json_body() or {}
+            num = body.get("numerator")
+            den = body.get("denominator")
+            mult = body.get("multiplier")
+            ok = self.player.set_meter(
+                numerator=int(num) if num is not None else None,
+                denominator=int(den) if den is not None else None,
+                multiplier=float(mult) if mult is not None else None
+            )
+            self._send_json({"success": ok, "status": self.player.get_status()})
+            return
+
         if path == "/api/channel/reset_volumes" or path == "/api/channel_reset_volumes":
             ok = self.player.reset_channel_volumes()
             self._send_json({"success": ok, "status": self.player.get_status()})

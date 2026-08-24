@@ -479,6 +479,51 @@ body {
     transition: width 0.05s linear;
 }
 
+/* Metronome Toolbar Controls */
+.metro-controls-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    flex-wrap: wrap;
+}
+
+.metro-meter-group,
+.metro-mult-group {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+}
+
+.metro-chip {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    user-select: none;
+}
+
+.metro-chip:hover {
+    color: var(--text-primary);
+    border-color: rgba(255, 255, 255, 0.25);
+    background: var(--bg-card-sub);
+}
+
+.metro-chip.active {
+    background: rgba(168, 85, 247, 0.2);
+    border-color: var(--primary);
+    color: #fff;
+    box-shadow: 0 0 8px rgba(168, 85, 247, 0.3);
+}
+
 /* Scrubber / Progress */
 .scrubber-container {
     display: flex;
