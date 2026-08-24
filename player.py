@@ -324,11 +324,14 @@ class MidiPlayer:
         try:
             mid = mido.MidiFile(filepath)
             self._mid_file_obj = mid
+            self.custom_time_sig = None
+            self.meter_multiplier = 1.0
+
             beat_map, beat_times = self._build_beat_map(
                 mid,
-                custom_num=self.time_signature[0] if self.custom_time_sig else None,
-                custom_den=self.time_signature[1] if self.custom_time_sig else None,
-                multiplier=self.meter_multiplier
+                custom_num=None,
+                custom_den=None,
+                multiplier=1.0
             )
             events = []
             current_time = 0.0
@@ -347,8 +350,7 @@ class MidiPlayer:
                 self.current_filename = os.path.basename(filepath)
                 self.duration = current_time
                 self.bpm = initial_bpm
-                if not self.custom_time_sig:
-                    self.time_signature = initial_sig
+                self.time_signature = initial_sig
                 self.events = events
                 self.beat_map = beat_map
                 self.beat_times = beat_times
